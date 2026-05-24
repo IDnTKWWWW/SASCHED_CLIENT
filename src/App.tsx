@@ -14,7 +14,6 @@ import {
   ArrowRight,
   MapPin,
   GraduationCap,
-  RefreshCw,
   X,
   Download,
   Share2,
@@ -28,9 +27,9 @@ import {
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const SCHOOL_NAME = "STI Calamba";
-const DEPT = "Office of the University Registrar";
+const DEPT = "(SAS) Appointment system";
 const VENUE = "First Floor, Main Building";
-const BOOKING_WINDOW_DAYS = 14; // max days ahead a student can book
+const BOOKING_WINDOW_DAYS = 14;
 
 // ─── MOCK AUTHENTICATION ──────────────────────────────────────────────────────
 const LOGGED_IN_USER = {
@@ -45,16 +44,17 @@ const WINDOWS = [
     id: "cashier",
     label: "Cashier Window",
     desc: "Payments, fees & clearances",
+    dept: "Cashier",
   },
   {
     id: "registrar",
     label: "Registrar Window",
     desc: "Enrollment, records & forms",
+    dept: "Registrar",
   },
 ];
 
 // ─── TIME SLOTS ───────────────────────────────────────────────────────────────
-// isToday slots simulate reduced availability (some already passed)
 const buildTimeSlots = (isToday) => {
   const now = new Date();
   const currentHour = now.getHours();
@@ -77,7 +77,6 @@ const buildTimeSlots = (isToday) => {
 
   if (!isToday) return allSlots;
 
-  // For today: hide slots that have already passed (within 30 min grace)
   return allSlots.filter((slot) => {
     const slotTotalMinutes = slot.hour * 60 + slot.minute;
     const nowTotalMinutes = currentHour * 60 + currentMinute;
@@ -107,9 +106,6 @@ function getDaysInMonth(year, month) {
 function getFirstDayOfMonth(year, month) {
   return new Date(year, month, 1).getDay();
 }
-function generateTicketNumber() {
-  return "A-" + String(Math.floor(Math.random() * 900) + 100);
-}
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function App() {
@@ -121,17 +117,26 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [selectedWindow, setSelectedWindow] = useState(null);
-  const [bookingMode, setBookingMode] = useState(null); // null | "now" | "later"
-  const [step, setStep] = useState("home"); // home | booking | confirm | ticket
+  const [bookingMode, setBookingMode] = useState(null);
+  const [step, setStep] = useState("home");
   const [ticket, setTicket] = useState(null);
-  const [nowServingTicket, setNowServingTicket] = useState(null); // e.g. "A-047" from DB
-  const [liveQueue, setLiveQueue] = useState([]); // waiting rows from DB
   const [ticketVisible, setTicketVisible] = useState(false);
   const [pulseQueue, setPulseQueue] = useState(false);
-  const [queuePosition, setQueuePosition] = useState(null); // live position in queue
-  const [isYourTurn, setIsYourTurn] = useState(false); // full-screen alert trigger
-  const [liveQueueCount, setLiveQueueCount] = useState(null); // real waiting count from DB
+  const [queuePosition, setQueuePosition] = useState(null);
+  const [isYourTurn, setIsYourTurn] = useState(false);
 
+  // ── Split "Now Serving" per department ──────────────────────
+  const [nowServingCashier, setNowServingCashier] = useState(null);
+  const [nowServingRegistrar, setNowServingRegistrar] = useState(null);
+
+  // ── Split live queue per department ─────────────────────────
+  const [cashierQueue, setCashierQueue] = useState([]);
+  const [registrarQueue, setRegistrarQueue] = useState([]);
+
+  // ── Total across both departments ───────────────────────────
+  const [liveQueueCount, setLiveQueueCount] = useState(null);
+
+  // ── Pulse animation ─────────────────────────────────────────
   useEffect(() => {
     const interval = setInterval(() => {
       setPulseQueue(true);
@@ -140,182 +145,197 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // ── Fetch initial data from Supabase ─────────────────────────
+  // ── Realtime Refs to prevent WebSocket disconnections ────────
+  const ticketRef = useRef(ticket);
+  useEffect(() => {
+    ticketRef.current = ticket;
+  }, [ticket]);
+
+  // ── Fetch & Realtime Sync ────────────────────────────────────
   useEffect(() => {
     const fetchInitial = async () => {
-      // 1. Count of waiting tickets
-      const { count } = await supabase
-        .from("queue_tickets")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "waiting");
-      setLiveQueueCount(count ?? 0);
-
-      // 2. Currently serving ticket
+      // 1. Now Serving (Fetch both windows)
       const { data: servingData } = await supabase
         .from("queue_tickets")
-        .select("ticket_number, student_name, appointment_time")
-        .eq("status", "serving")
-        .order("created_at", { ascending: false })
-        .limit(1);
+        .select("ticket_number, department")
+        .eq("status", "serving");
 
-      // FIX: Check the array length and pull from [0]
-      if (servingData && servingData.length > 0) {
-        setNowServingTicket(servingData[0].ticket_number);
-      } else {
-        setNowServingTicket(null);
+      if (servingData) {
+        const cashierRow = servingData.find((r) => r.department === "Cashier");
+        const registrarRow = servingData.find(
+          (r) => r.department === "Registrar"
+        );
+        if (cashierRow) setNowServingCashier(cashierRow.ticket_number);
+        if (registrarRow) setNowServingRegistrar(registrarRow.ticket_number);
       }
 
-      // 3. Waiting queue (oldest first, up to 10 rows for the list)
-      const { data: waitingData } = await supabase
+      // 2. Waiting Queue (Fetch rows + exact count in one go so they never desync)
+      const {
+        data: waitingData,
+        count,
+        error,
+      } = await supabase
         .from("queue_tickets")
-        .select("ticket_number, student_name, appointment_time")
+        .select("ticket_number, student_name, appointment_time, department", {
+          count: "exact",
+        })
         .eq("status", "waiting")
-        .order("created_at", { ascending: true })
-        .limit(10);
-      if (waitingData) setLiveQueue(waitingData);
-    };
-    fetchInitial();
-  }, []);
+        .order("created_at", { ascending: true });
 
-  // ── Supabase Realtime: watch all queue_tickets changes ───────
-  useEffect(() => {
+      if (error) {
+        console.error("Database fetch error:", error);
+      }
+
+      if (waitingData) {
+        setCashierQueue(waitingData.filter((r) => r.department === "Cashier"));
+        setRegistrarQueue(
+          waitingData.filter((r) => r.department === "Registrar")
+        );
+        setLiveQueueCount(count !== null ? count : waitingData.length);
+      }
+    };
+
+    fetchInitial();
+
     const channel = supabase
       .channel("student_queue_watch")
-      // New booking inserted — append to live queue list and increment count
+      // New ticket inserted
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "queue_tickets" },
         (payload) => {
-          if (payload.new.status === "waiting") {
-            setLiveQueueCount((prev) => (prev ?? 0) + 1);
-            setLiveQueue((prev) => [
-              ...prev,
-              {
-                ticket_number: payload.new.ticket_number,
-                student_name: payload.new.student_name,
-                appointment_time: payload.new.appointment_time,
-              },
-            ]);
+          const row = payload.new;
+          if (row.status !== "waiting") return;
+
+          const item = {
+            ticket_number: row.ticket_number,
+            student_name: row.student_name,
+            appointment_time: row.appointment_time,
+            department: row.department,
+          };
+
+          setLiveQueueCount((prev) => (prev ?? 0) + 1);
+
+          if (row.department === "Cashier") {
+            setCashierQueue((prev) => [...prev, item]);
+          } else if (row.department === "Registrar") {
+            setRegistrarQueue((prev) => [...prev, item]);
           }
         }
       )
+      // Ticket status changed
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "queue_tickets" },
         (payload) => {
           const row = payload.new;
+          const dept = row.department;
 
-          // 1. If ticket is no longer waiting, remove it from the live list
+          // Remove from waiting lists
           if (["serving", "served", "noshow", "removed"].includes(row.status)) {
-            setLiveQueue((prevQueue) => {
-              const wasWaiting = prevQueue.some(
-                (r) => r.ticket_number === row.ticket_number
-              );
-              if (wasWaiting) {
+            setCashierQueue((q) => {
+              if (q.some((r) => r.ticket_number === row.ticket_number)) {
                 setLiveQueueCount((c) => Math.max(0, (c ?? 1) - 1));
+                return q.filter((r) => r.ticket_number !== row.ticket_number);
               }
-              return prevQueue.filter(
-                (r) => r.ticket_number !== row.ticket_number
-              );
+              return q;
+            });
+            setRegistrarQueue((q) => {
+              if (q.some((r) => r.ticket_number === row.ticket_number)) {
+                setLiveQueueCount((c) => Math.max(0, (c ?? 1) - 1));
+                return q.filter((r) => r.ticket_number !== row.ticket_number);
+              }
+              return q;
             });
           }
 
-          // 2. Track who is currently serving
+          // Update "Now Serving"
           if (row.status === "serving") {
-            setNowServingTicket(row.ticket_number);
+            if (dept === "Cashier") setNowServingCashier(row.ticket_number);
+            if (dept === "Registrar") setNowServingRegistrar(row.ticket_number);
           }
 
-          // 3. Clear 'Now Serving' if the person at the window leaves
+          // Clear "Now Serving"
           if (["served", "noshow", "removed"].includes(row.status)) {
-            setNowServingTicket((current) =>
-              current === row.ticket_number ? null : current
-            );
+            if (dept === "Cashier") {
+              setNowServingCashier((prev) =>
+                prev === row.ticket_number ? null : prev
+              );
+            }
+            if (dept === "Registrar") {
+              setNowServingRegistrar((prev) =>
+                prev === row.ticket_number ? null : prev
+              );
+            }
           }
 
-          // 4. Update the user's live position in line
-          if (ticket && row.status === "serving") {
+          // Check if it's YOUR turn (Using a Ref so the socket never drops!)
+          if (ticketRef.current && row.status === "serving") {
+            if (row.ticket_number === ticketRef.current.number) {
+              setIsYourTurn(true);
+            }
+
             const fetchPosition = async () => {
-              const { data, error } = await supabase
+              const { data, err } = await supabase
                 .from("queue_tickets")
                 .select("ticket_number")
                 .eq("status", "waiting")
                 .order("created_at", { ascending: true });
-              if (!error && data) {
+
+              if (!err && data) {
                 const myIndex = data.findIndex(
-                  (r) => r.ticket_number === ticket.number
+                  (r) => r.ticket_number === ticketRef.current.number
                 );
                 setQueuePosition(myIndex === -1 ? 0 : myIndex + 1);
               }
             };
             fetchPosition();
           }
-
-          // 5. Trigger the giant green modal!
-          if (
-            ticket &&
-            row.ticket_number === ticket.number &&
-            row.status === "serving"
-          ) {
-            setIsYourTurn(true);
-          }
         }
       )
       .subscribe();
 
+    // Because the dependency array is empty, this connection will NEVER drop!
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [ticket]);
+  }, []);
+
+  // ── Derived: nowServing for the user's department ────────────
+  const userDeptNowServing =
+    ticket?.window === "Cashier Window"
+      ? nowServingCashier
+      : ticket?.window === "Registrar Window"
+      ? nowServingRegistrar
+      : null;
 
   // ── Date helpers ─────────────────────────────────────────────
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);
   const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
-
-  const isPast = (day) => {
-    const d = new Date(currentYear, currentMonth, day);
-    return d < today;
-  };
-
+  const isPast = (day) => new Date(currentYear, currentMonth, day) < today;
   const isBeyondWindow = (day) => {
-    const d = new Date(currentYear, currentMonth, day);
     const cutoff = new Date(today);
     cutoff.setDate(cutoff.getDate() + BOOKING_WINDOW_DAYS);
-    return d > cutoff;
+    return new Date(currentYear, currentMonth, day) > cutoff;
   };
-
-  const isWeekend = (day) => {
-    const dow = new Date(currentYear, currentMonth, day).getDay();
-    return dow === 0; // Sunday only; Saturday is bookable
-  };
-
-  const isToday = (day) => {
-    return (
-      day === today.getDate() &&
-      currentMonth === today.getMonth() &&
-      currentYear === today.getFullYear()
-    );
-  };
-
+  const isWeekend = (day) =>
+    new Date(currentYear, currentMonth, day).getDay() === 0;
+  const isToday = (day) =>
+    day === today.getDate() &&
+    currentMonth === today.getMonth() &&
+    currentYear === today.getFullYear();
   const isDisabled = (day) =>
     isPast(day) || isBeyondWindow(day) || isWeekend(day);
 
-  // Keep calendar navigation from going before current month or past cutoff
   const cutoffDate = new Date(today);
   cutoffDate.setDate(cutoffDate.getDate() + BOOKING_WINDOW_DAYS);
-
-  const canGoPrev = () => {
-    return (
-      currentYear > today.getFullYear() ||
-      (currentYear === today.getFullYear() && currentMonth > today.getMonth())
-    );
-  };
-  const canGoNext = () => {
-    return (
-      currentYear < cutoffDate.getFullYear() ||
-      (currentYear === cutoffDate.getFullYear() &&
-        currentMonth < cutoffDate.getMonth())
-    );
-  };
+  const canGoPrev = () =>
+    currentYear > today.getFullYear() ||
+    (currentYear === today.getFullYear() && currentMonth > today.getMonth());
+  const canGoNext = () =>
+    currentYear < cutoffDate.getFullYear() ||
+    (currentYear === cutoffDate.getFullYear() &&
+      currentMonth < cutoffDate.getMonth());
 
   const prevMonth = () => {
     if (!canGoPrev()) return;
@@ -324,6 +344,7 @@ export default function App() {
       setCurrentYear((y) => y - 1);
     } else setCurrentMonth((m) => m - 1);
   };
+
   const nextMonth = () => {
     if (!canGoNext()) return;
     if (currentMonth === 11) {
@@ -332,21 +353,25 @@ export default function App() {
     } else setCurrentMonth((m) => m + 1);
   };
 
-  // Slots for the selected date
   const selectedIsToday = selectedDate
     ? isToday(selectedDate.day) &&
       selectedDate.month === today.getMonth() &&
       selectedDate.year === today.getFullYear()
     : false;
+
   const timeSlots = buildTimeSlots(selectedIsToday);
 
-  // ── Booking ───────────────────────────────────────────────────
+  // ── Booking (Fixed Supabase Connection!) ──────────────────────
   const handleBook = async () => {
-    const windowLabel =
-      WINDOWS.find((w) => w.id === selectedWindow)?.label || "—";
-    const num = generateTicketNumber();
+    const windowObj = WINDOWS.find((w) => w.id === selectedWindow);
+    const windowLabel = windowObj?.label || "—";
+    const department = windowObj?.dept || "Cashier";
 
-    // FIX: Actually save the ticket to the Supabase database!
+    // Generate smart ticket prefix
+    const prefix = department === "Cashier" ? "C" : "R";
+    const num = prefix + "-" + String(Math.floor(Math.random() * 900) + 100);
+
+    // Save to Supabase
     const { error } = await supabase.from("queue_tickets").insert([
       {
         ticket_number: num,
@@ -354,14 +379,16 @@ export default function App() {
         student_id: LOGGED_IN_USER.studentId,
         course: LOGGED_IN_USER.course,
         destination_window: windowLabel,
+        department: department,
         appointment_time: selectedSlot.time,
         status: "waiting",
+        booking_type: "booked",
       },
     ]);
 
     if (error) {
       console.error("Insert error:", error);
-      alert("Failed to connect to database. Check the console.");
+      alert("Failed to connect to database.");
       return;
     }
 
@@ -388,11 +415,200 @@ export default function App() {
     setSelectedSlot(null);
     setSelectedWindow(null);
     setBookingMode(null);
-    // REMOVED setTicket(null) so the app remembers who you are on the Home screen!
+    setTicket(null);
     setTicketVisible(false);
+    setQueuePosition(null);
   };
 
-  const canConfirm = selectedDate && selectedSlot && selectedWindow;
+  // ── Reusable queue column ─────────────────────────────────────
+  const QueueColumn = ({
+    title,
+    icon,
+    accentColor,
+    nowServingTicket,
+    queue,
+  }) => (
+    <div
+      className="card-shadow"
+      style={{
+        background: "white",
+        borderRadius: 16,
+        border: "1px solid rgba(226,232,240,0.6)",
+        overflow: "hidden",
+        flex: 1,
+      }}
+    >
+      <div
+        style={{
+          padding: "16px 20px 12px",
+          borderBottom: "1px solid var(--slate-100)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {icon}
+          <span
+            style={{ fontWeight: 700, fontSize: 14, color: "var(--slate-700)" }}
+          >
+            {title}
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: accentColor,
+              background: accentColor + "18",
+              border: `1px solid ${accentColor}30`,
+              borderRadius: 99,
+              padding: "2px 8px",
+            }}
+          >
+            {queue.length} waiting
+          </span>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 5,
+            fontSize: 11,
+            color: "var(--green-600)",
+            fontWeight: 600,
+          }}
+        >
+          <div
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--green-500)",
+            }}
+          />{" "}
+          LIVE
+        </div>
+      </div>
+      {/* Now Serving row */}
+      <div
+        style={{
+          padding: "10px 20px",
+          background: accentColor + "08",
+          borderBottom: "1px solid var(--slate-100)",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 10,
+            fontWeight: 700,
+            color: accentColor,
+            letterSpacing: "0.07em",
+            marginBottom: 4,
+          }}
+        >
+          NOW SERVING
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            className={pulseQueue && nowServingTicket ? "pulse-ring" : ""}
+            style={{
+              fontFamily: "'Space Mono', monospace",
+              fontSize: nowServingTicket ? 26 : 18,
+              fontWeight: 700,
+              color: nowServingTicket ? "var(--slate-800)" : "var(--slate-300)",
+              letterSpacing: "0.02em",
+            }}
+          >
+            {nowServingTicket ?? "---"}
+          </div>
+          {nowServingTicket && (
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: accentColor,
+                background: accentColor + "18",
+                border: `1px solid ${accentColor}30`,
+                borderRadius: 99,
+                padding: "3px 9px",
+              }}
+            >
+              AT WINDOW
+            </span>
+          )}
+          {!nowServingTicket && (
+            <span style={{ fontSize: 11, color: "var(--slate-400)" }}>
+              Window is ready
+            </span>
+          )}
+        </div>
+      </div>
+      {/* Queue rows */}
+      <div style={{ padding: "6px 0", maxHeight: 220, overflowY: "auto" }}>
+        {queue.length === 0 ? (
+          <div
+            style={{
+              padding: "18px 20px",
+              fontSize: 13,
+              color: "var(--slate-400)",
+              textAlign: "center",
+            }}
+          >
+            No students waiting.
+          </div>
+        ) : (
+          queue.map((q, i) => (
+            <div
+              key={q.ticket_number}
+              className="queue-item"
+              style={{
+                padding: "9px 20px",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                borderLeft: "3px solid transparent",
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: "'Space Mono', monospace",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: "var(--slate-400)",
+                  minWidth: 46,
+                }}
+              >
+                {q.ticket_number}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    color: "var(--slate-700)",
+                  }}
+                >
+                  {q.student_name}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--slate-400)" }}>
+                  {q.appointment_time}
+                </div>
+              </div>
+              <span
+                style={{
+                  fontSize: 11,
+                  color: "var(--slate-400)",
+                  fontWeight: 500,
+                }}
+              >
+                #{i + 1}
+              </span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
 
   return (
     <div
@@ -430,7 +646,6 @@ export default function App() {
         .slot-btn:hover:not(:disabled) { transform: translateY(-2px); }
         .cal-day { transition: all 0.15s ease; cursor: pointer; }
         .cal-day:hover { background: var(--blue-100) !important; }
-        .stepper-line { transition: width 0.4s ease; }
         .card-shadow { box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 8px 32px rgba(59,130,246,0.08); }
         .ticket-shadow { box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 20px 60px rgba(37,99,235,0.18); }
         .btn-primary { transition: all 0.2s ease; }
@@ -453,7 +668,7 @@ export default function App() {
         ::-webkit-scrollbar-thumb { background: var(--slate-300); border-radius: 99px; }
       `}</style>
 
-      {/* ── HEADER ─────────────────────────────────────────────── */}
+      {/* ── HEADER ──────────────────────────────────────────────── */}
       <header
         style={{
           background: "rgba(255,255,255,0.85)",
@@ -476,25 +691,23 @@ export default function App() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div
+            {/* Custom Logo Image */}
+            <img
+              src="/logo.png"
+              alt="STI Logo"
               style={{
-                width: 38,
-                height: 38,
+                width: 42,
+                height: 42,
+                objectFit: "contain",
                 borderRadius: 10,
-                background: "linear-gradient(135deg, #2563eb, #1d4ed8)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                boxShadow: "0 4px 12px rgba(37,99,235,0.35)",
               }}
-            >
-              <GraduationCap size={20} color="white" />
-            </div>
+            />
+            {/* Text matching your screenshot */}
             <div>
               <div
                 style={{
-                  fontWeight: 700,
-                  fontSize: 15,
+                  fontWeight: 800,
+                  fontSize: 18,
                   color: "var(--slate-800)",
                   letterSpacing: "-0.01em",
                 }}
@@ -503,10 +716,10 @@ export default function App() {
               </div>
               <div
                 style={{
-                  fontSize: 11,
+                  fontSize: 12,
                   color: "var(--slate-400)",
-                  fontWeight: 400,
-                  marginTop: -1,
+                  fontWeight: 500,
+                  marginTop: -2,
                 }}
               >
                 {DEPT}
@@ -514,7 +727,6 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Logged-in user pill */}
             <div
               style={{
                 display: "flex",
@@ -572,7 +784,7 @@ export default function App() {
       <main
         style={{ maxWidth: 1100, margin: "0 auto", padding: "28px 20px 60px" }}
       >
-        {/* ── STEP INDICATOR ─────────────────────────────────── */}
+        {/* ── STEP INDICATOR ──────────────────────────────────────── */}
         {step !== "home" && (
           <div className="fade-in" style={{ marginBottom: 28 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
@@ -662,12 +874,12 @@ export default function App() {
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* HOME VIEW                                            */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════════════════ */}
+        {/* HOME VIEW                                              */}
+        {/* ════════════════════════════════════════════════════════ */}
         {step === "home" && (
           <div className="fade-in">
-            {/* Hero */}
+            {/* Hero — with two Now Serving cards */}
             <div
               style={{
                 background:
@@ -713,6 +925,7 @@ export default function App() {
                     gap: 20,
                   }}
                 >
+                  {/* Left: copy */}
                   <div>
                     <div
                       style={{
@@ -779,58 +992,132 @@ export default function App() {
                       Book an Appointment <ArrowRight size={16} />
                     </button>
                   </div>
-                  {/* Now Serving card */}
-                  <div
-                    style={{
-                      background: "rgba(255,255,255,0.1)",
-                      backdropFilter: "blur(10px)",
-                      border: "1px solid rgba(255,255,255,0.2)",
-                      borderRadius: 16,
-                      padding: "20px 24px",
-                      minWidth: 160,
-                      textAlign: "center",
-                    }}
-                  >
+
+                  {/* Right: two Now Serving cards side-by-side */}
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                    {/* Cashier Window */}
                     <div
                       style={{
-                        fontSize: 11,
-                        color: "rgba(255,255,255,0.7)",
-                        fontWeight: 500,
-                        letterSpacing: "0.06em",
-                        marginBottom: 6,
+                        background: "rgba(255,255,255,0.1)",
+                        backdropFilter: "blur(10px)",
+                        border: "1px solid rgba(255,255,255,0.2)",
+                        borderRadius: 16,
+                        padding: "18px 20px",
+                        minWidth: 148,
+                        textAlign: "center",
                       }}
                     >
-                      NOW SERVING
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "rgba(255,255,255,0.6)",
+                          fontWeight: 600,
+                          letterSpacing: "0.07em",
+                          marginBottom: 4,
+                        }}
+                      >
+                        CASHIER
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "rgba(255,255,255,0.5)",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Now Serving
+                      </div>
+                      <div
+                        className={
+                          pulseQueue && nowServingCashier ? "pulse-ring" : ""
+                        }
+                        style={{
+                          fontFamily: "'Space Mono', monospace",
+                          fontSize: nowServingCashier ? 30 : 20,
+                          fontWeight: 700,
+                          color: "white",
+                          lineHeight: 1,
+                          display: "inline-block",
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        {nowServingCashier ?? "---"}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "rgba(255,255,255,0.5)",
+                          marginTop: 6,
+                        }}
+                      >
+                        {nowServingCashier ? "At the window" : "Ready"}
+                      </div>
                     </div>
-                    <div
-                      className={pulseQueue ? "pulse-ring" : ""}
-                      style={{
-                        fontFamily: "'Space Mono', monospace",
-                        fontSize: nowServingTicket ? 38 : 28,
-                        fontWeight: 700,
-                        color: "white",
-                        lineHeight: 1,
-                        display: "inline-block",
-                        letterSpacing: "0.02em",
-                      }}
-                    >
-                      {nowServingTicket ?? "---"}
-                    </div>
+
+                    {/* Registrar Window */}
                     <div
                       style={{
-                        fontSize: 11,
-                        color: "rgba(255,255,255,0.6)",
-                        marginTop: 8,
+                        background: "rgba(255,255,255,0.1)",
+                        backdropFilter: "blur(10px)",
+                        border: "1px solid rgba(255,255,255,0.2)",
+                        borderRadius: 16,
+                        padding: "18px 20px",
+                        minWidth: 148,
+                        textAlign: "center",
                       }}
                     >
-                      {nowServingTicket ? "At the window" : "Ready"}
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "rgba(255,255,255,0.6)",
+                          fontWeight: 600,
+                          letterSpacing: "0.07em",
+                          marginBottom: 4,
+                        }}
+                      >
+                        REGISTRAR
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "rgba(255,255,255,0.5)",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Now Serving
+                      </div>
+                      <div
+                        className={
+                          pulseQueue && nowServingRegistrar ? "pulse-ring" : ""
+                        }
+                        style={{
+                          fontFamily: "'Space Mono', monospace",
+                          fontSize: nowServingRegistrar ? 30 : 20,
+                          fontWeight: 700,
+                          color: "white",
+                          lineHeight: 1,
+                          display: "inline-block",
+                          letterSpacing: "0.02em",
+                        }}
+                      >
+                        {nowServingRegistrar ?? "---"}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          color: "rgba(255,255,255,0.5)",
+                          marginTop: 6,
+                        }}
+                      >
+                        {nowServingRegistrar ? "At the window" : "Ready"}
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Stats Row — single live card */}
+            {/* Stats Row — total in queue */}
             <div style={{ marginBottom: 24 }}>
               <div
                 className="card-shadow"
@@ -905,190 +1192,45 @@ export default function App() {
                     />
                     {liveQueueCount === null
                       ? "Loading…"
-                      : "Live from database"}
+                      : `Cashier: ${cashierQueue.length} · Registrar: ${registrarQueue.length}`}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Queue + Notice */}
+            {/* Split queue + Notice */}
             <div
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 340px",
                 gap: 16,
-                flexWrap: "wrap",
               }}
             >
-              {/* Live Queue */}
+              {/* Two queue columns side by side */}
               <div
-                className="card-shadow"
-                style={{
-                  background: "white",
-                  borderRadius: 16,
-                  border: "1px solid rgba(226,232,240,0.6)",
-                  overflow: "hidden",
-                }}
+                style={{ display: "flex", flexDirection: "column", gap: 14 }}
               >
                 <div
                   style={{
-                    padding: "18px 22px 14px",
-                    borderBottom: "1px solid var(--slate-100)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 14,
                   }}
                 >
-                  <div
-                    style={{ display: "flex", alignItems: "center", gap: 8 }}
-                  >
-                    <Users size={16} color="var(--blue-600)" />
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 14,
-                        color: "var(--slate-700)",
-                      }}
-                    >
-                      Live Queue
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 5,
-                      fontSize: 11,
-                      color: "var(--green-600)",
-                      fontWeight: 600,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: "50%",
-                        background: "var(--green-500)",
-                      }}
-                    />{" "}
-                    LIVE
-                  </div>
-                </div>
-                <div style={{ padding: "8px 0" }}>
-                  {/* Now Serving row (from DB) */}
-                  {nowServingTicket && (
-                    <div
-                      className="queue-item"
-                      style={{
-                        padding: "10px 22px",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 14,
-                        borderLeft: "3px solid var(--blue-500)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          fontFamily: "'Space Mono', monospace",
-                          fontSize: 13,
-                          fontWeight: 700,
-                          color: "var(--blue-600)",
-                          minWidth: 48,
-                        }}
-                      >
-                        {nowServingTicket}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 500,
-                            color: "var(--slate-700)",
-                          }}
-                        >
-                          At the window
-                        </div>
-                      </div>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          letterSpacing: "0.06em",
-                          color: "var(--blue-700)",
-                          background: "var(--blue-50)",
-                          border: "1px solid var(--blue-200)",
-                          borderRadius: 99,
-                          padding: "3px 10px",
-                        }}
-                      >
-                        NOW SERVING
-                      </span>
-                    </div>
-                  )}
-                  {/* Waiting queue rows (from DB) */}
-                  {liveQueue.length === 0 && !nowServingTicket ? (
-                    <div
-                      style={{
-                        padding: "20px 22px",
-                        fontSize: 13,
-                        color: "var(--slate-400)",
-                        textAlign: "center",
-                      }}
-                    >
-                      No students in queue right now.
-                    </div>
-                  ) : (
-                    liveQueue.map((q, i) => (
-                      <div
-                        key={q.ticket_number}
-                        className="queue-item"
-                        style={{
-                          padding: "10px 22px",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 14,
-                          borderLeft: "3px solid transparent",
-                        }}
-                      >
-                        <div
-                          style={{
-                            fontFamily: "'Space Mono', monospace",
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: "var(--slate-400)",
-                            minWidth: 48,
-                          }}
-                        >
-                          {q.ticket_number}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 500,
-                              color: "var(--slate-700)",
-                            }}
-                          >
-                            {q.student_name}
-                          </div>
-                          <div
-                            style={{ fontSize: 11, color: "var(--slate-400)" }}
-                          >
-                            {q.appointment_time}
-                          </div>
-                        </div>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: "var(--slate-400)",
-                            fontWeight: 500,
-                          }}
-                        >
-                          #{i + 1}
-                        </span>
-                      </div>
-                    ))
-                  )}
+                  <QueueColumn
+                    title="Cashier Window"
+                    icon={<Users size={15} color="#2563eb" />}
+                    accentColor="#2563eb"
+                    nowServingTicket={nowServingCashier}
+                    queue={cashierQueue}
+                  />
+                  <QueueColumn
+                    title="Registrar Window"
+                    icon={<Users size={15} color="#7c3aed" />}
+                    accentColor="#7c3aed"
+                    nowServingTicket={nowServingRegistrar}
+                    queue={registrarQueue}
+                  />
                 </div>
               </div>
 
@@ -1215,9 +1357,9 @@ export default function App() {
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* BOOKING VIEW                                         */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════════════════ */}
+        {/* BOOKING VIEW                                           */}
+        {/* ════════════════════════════════════════════════════════ */}
         {step === "booking" && (
           <div className="slide-up">
             {/* Window selection */}
@@ -1441,12 +1583,11 @@ export default function App() {
                       const day = i + 1;
                       const disabled = isDisabled(day);
                       const isTod = isToday(day);
-                      const isSelected =
+                      const isSel =
                         selectedDate &&
                         selectedDate.day === day &&
                         selectedDate.month === currentMonth &&
                         selectedDate.year === currentYear;
-                      const isBeyond = isBeyondWindow(day);
                       return (
                         <div
                           key={day}
@@ -1468,13 +1609,13 @@ export default function App() {
                             justifyContent: "center",
                             borderRadius: 10,
                             fontSize: 13,
-                            fontWeight: isSelected ? 700 : isTod ? 600 : 400,
-                            background: isSelected
+                            fontWeight: isSel ? 700 : isTod ? 600 : 400,
+                            background: isSel
                               ? "var(--blue-600)"
-                              : isTod && !isSelected
+                              : isTod && !isSel
                               ? "var(--blue-50)"
                               : "transparent",
-                            color: isSelected
+                            color: isSel
                               ? "white"
                               : disabled
                               ? "var(--slate-300)"
@@ -1482,20 +1623,19 @@ export default function App() {
                               ? "var(--blue-700)"
                               : "var(--slate-700)",
                             border:
-                              isTod && !isSelected
+                              isTod && !isSel
                                 ? "1.5px solid var(--blue-300)"
                                 : "1.5px solid transparent",
                             cursor: disabled ? "default" : "pointer",
                             transition: "all 0.15s ease",
-                            boxShadow: isSelected
+                            boxShadow: isSel
                               ? "0 4px 12px rgba(37,99,235,0.3)"
                               : "none",
-                            textDecoration: isBeyond ? "none" : "none",
                             position: "relative",
                           }}
                         >
                           {day}
-                          {isTod && !isSelected && (
+                          {isTod && !isSel && (
                             <div
                               style={{
                                 position: "absolute",
@@ -1592,7 +1732,6 @@ export default function App() {
                       }`}
                 </div>
 
-                {/* ── No date selected ── */}
                 {!selectedDate && (
                   <div
                     style={{
@@ -1612,7 +1751,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* ── TODAY: show two-option mode chooser (unless mode already chosen) ── */}
                 {selectedDate && selectedIsToday && bookingMode === null && (
                   <div
                     className="fade-in"
@@ -1622,7 +1760,6 @@ export default function App() {
                       gap: 14,
                     }}
                   >
-                    {/* Option 1: Get a Ticket Now */}
                     <button
                       className="mode-card"
                       onClick={() => {
@@ -1635,7 +1772,6 @@ export default function App() {
                           available: 1,
                           total: 1,
                         });
-                        // If a window is already chosen, skip straight to confirm
                         if (selectedWindow) setStep("confirm");
                       }}
                       style={{
@@ -1716,14 +1852,12 @@ export default function App() {
                                 borderRadius: "50%",
                                 background: "var(--green-500)",
                               }}
-                            />
+                            />{" "}
                             Walk-in · Proceeds to Confirm
                           </div>
                         </div>
                       </div>
                     </button>
-
-                    {/* Option 2: Schedule for Later Today */}
                     <button
                       className="mode-card"
                       onClick={() => setBookingMode("later")}
@@ -1780,8 +1914,7 @@ export default function App() {
                             }}
                           >
                             Pick a <strong>specific time slot</strong> later in
-                            the day. Only remaining slots are shown — past times
-                            are hidden.
+                            the day. Only remaining slots are shown.
                           </div>
                           <div
                             style={{
@@ -1806,7 +1939,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* ── TODAY + "later" mode: show remaining time slots ── */}
                 {selectedDate && selectedIsToday && bookingMode === "later" && (
                   <div className="fade-in">
                     <button
@@ -1900,8 +2032,7 @@ export default function App() {
                               >
                                 {slots.map((slot) => {
                                   const full = slot.available === 0;
-                                  const isSelected =
-                                    selectedSlot?.id === slot.id;
+                                  const isSel = selectedSlot?.id === slot.id;
                                   const pct =
                                     (slot.total - slot.available) / slot.total;
                                   return (
@@ -1919,19 +2050,19 @@ export default function App() {
                                         cursor: full
                                           ? "not-allowed"
                                           : "pointer",
-                                        border: isSelected
+                                        border: isSel
                                           ? "2px solid var(--blue-500)"
                                           : "1.5px solid " +
                                             (full
                                               ? "var(--slate-100)"
                                               : "var(--slate-200)"),
-                                        background: isSelected
+                                        background: isSel
                                           ? "var(--blue-50)"
                                           : full
                                           ? "var(--slate-50)"
                                           : "white",
                                         fontFamily: "'Outfit', sans-serif",
-                                        boxShadow: isSelected
+                                        boxShadow: isSel
                                           ? "0 0 0 3px rgba(59,130,246,0.15)"
                                           : "none",
                                       }}
@@ -1946,7 +2077,7 @@ export default function App() {
                                         <Clock
                                           size={14}
                                           color={
-                                            isSelected
+                                            isSel
                                               ? "var(--blue-600)"
                                               : full
                                               ? "var(--slate-300)"
@@ -1957,7 +2088,7 @@ export default function App() {
                                           style={{
                                             fontSize: 13,
                                             fontWeight: 600,
-                                            color: isSelected
+                                            color: isSel
                                               ? "var(--blue-700)"
                                               : full
                                               ? "var(--slate-300)"
@@ -2035,7 +2166,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* ── TODAY + "now" mode: confirmation nudge ── */}
                 {selectedDate && selectedIsToday && bookingMode === "now" && (
                   <div className="fade-in">
                     <button
@@ -2061,8 +2191,8 @@ export default function App() {
                     </button>
                     <div
                       style={{
-                        background: "linear-gradient(135deg, #fffbeb, #fef3c7)",
-                        border: "1.5px solid #fde68a",
+                        background: "linear-gradient(135deg, #eff6ff, #dbeafe)",
+                        border: "1px solid var(--blue-200)",
                         borderRadius: 14,
                         padding: "18px 20px",
                       }}
@@ -2081,36 +2211,36 @@ export default function App() {
                             height: 36,
                             borderRadius: 10,
                             background:
-                              "linear-gradient(135deg, #d97706, #b45309)",
+                              "linear-gradient(135deg, #2563eb, #1d4ed8)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                             flexShrink: 0,
                           }}
                         >
-                          <AlertCircle size={17} color="white" />
+                          <Zap size={17} color="white" />
                         </div>
                         <div
                           style={{
                             fontSize: 14,
                             fontWeight: 800,
-                            color: "#92400e",
+                            color: "var(--blue-800)",
                           }}
                         >
-                          Almost done!
+                          Walk-in / Now selected
                         </div>
                       </div>
                       <div
                         style={{
-                          fontSize: 13,
-                          color: "#78350f",
+                          fontSize: 12,
+                          color: "var(--blue-700)",
                           lineHeight: 1.7,
                         }}
                       >
-                        ⚠️ Select your <strong>destination window above</strong>{" "}
-                        (if you haven't already), then click{" "}
-                        <strong>"Continue to Confirm"</strong> at the bottom of
-                        the screen to finalize your ticket.
+                        ⚠️ <strong>Almost done!</strong> Please select your
+                        destination window above (if you haven't) and click{" "}
+                        <strong>Continue to Confirm</strong> at the bottom of
+                        the screen.
                       </div>
                       <div
                         style={{
@@ -2118,17 +2248,17 @@ export default function App() {
                           padding: "8px 12px",
                           background: "white",
                           borderRadius: 9,
-                          border: "1px solid #fde68a",
+                          border: "1px solid var(--blue-100)",
                           display: "flex",
                           alignItems: "center",
                           gap: 8,
                         }}
                       >
-                        <Zap size={12} color="#d97706" />
+                        <Clock size={12} color="var(--blue-500)" />
                         <span
                           style={{
                             fontSize: 11,
-                            color: "#92400e",
+                            color: "var(--blue-600)",
                             fontWeight: 600,
                           }}
                         >
@@ -2139,7 +2269,6 @@ export default function App() {
                   </div>
                 )}
 
-                {/* ── FUTURE DATE: standard time slots ── */}
                 {selectedDate && !selectedIsToday && (
                   <>
                     {timeSlots.length === 0 ? (
@@ -2211,8 +2340,7 @@ export default function App() {
                               >
                                 {slots.map((slot) => {
                                   const full = slot.available === 0;
-                                  const isSelected =
-                                    selectedSlot?.id === slot.id;
+                                  const isSel = selectedSlot?.id === slot.id;
                                   const pct =
                                     (slot.total - slot.available) / slot.total;
                                   return (
@@ -2230,19 +2358,19 @@ export default function App() {
                                         cursor: full
                                           ? "not-allowed"
                                           : "pointer",
-                                        border: isSelected
+                                        border: isSel
                                           ? "2px solid var(--blue-500)"
                                           : "1.5px solid " +
                                             (full
                                               ? "var(--slate-100)"
                                               : "var(--slate-200)"),
-                                        background: isSelected
+                                        background: isSel
                                           ? "var(--blue-50)"
                                           : full
                                           ? "var(--slate-50)"
                                           : "white",
                                         fontFamily: "'Outfit', sans-serif",
-                                        boxShadow: isSelected
+                                        boxShadow: isSel
                                           ? "0 0 0 3px rgba(59,130,246,0.15)"
                                           : "none",
                                       }}
@@ -2257,7 +2385,7 @@ export default function App() {
                                         <Clock
                                           size={14}
                                           color={
-                                            isSelected
+                                            isSel
                                               ? "var(--blue-600)"
                                               : full
                                               ? "var(--slate-300)"
@@ -2268,7 +2396,7 @@ export default function App() {
                                           style={{
                                             fontSize: 13,
                                             fontWeight: 600,
-                                            color: isSelected
+                                            color: isSel
                                               ? "var(--blue-700)"
                                               : full
                                               ? "var(--slate-300)"
@@ -2346,7 +2474,6 @@ export default function App() {
                   </>
                 )}
 
-                {/* ── Continue button (shown when slot is ready and window selected) ── */}
                 {selectedDate && selectedSlot && selectedWindow && (
                   <button
                     className="btn-primary"
@@ -2396,9 +2523,9 @@ export default function App() {
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* CONFIRM VIEW                                         */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════════════════ */}
+        {/* CONFIRM VIEW                                           */}
+        {/* ════════════════════════════════════════════════════════ */}
         {step === "confirm" && (
           <div
             className="slide-up"
@@ -2408,7 +2535,6 @@ export default function App() {
               gap: 20,
             }}
           >
-            {/* Identity card (read-only) */}
             <div
               className="card-shadow"
               style={{
@@ -2437,7 +2563,6 @@ export default function App() {
               >
                 Review your details before finalizing
               </div>
-
               {/* Read-only user card */}
               <div
                 style={{
@@ -2582,7 +2707,6 @@ export default function App() {
                   account and cannot be changed here.
                 </div>
               </div>
-
               <div style={{ display: "flex", gap: 10 }}>
                 <button
                   onClick={() => setStep("booking")}
@@ -2629,8 +2753,7 @@ export default function App() {
                 </button>
               </div>
             </div>
-
-            {/* Appointment Summary */}
+            {/* Summary */}
             <div>
               <div
                 className="card-shadow"
@@ -2748,9 +2871,9 @@ export default function App() {
           </div>
         )}
 
-        {/* ══════════════════════════════════════════════════════ */}
-        {/* TICKET VIEW                                          */}
-        {/* ══════════════════════════════════════════════════════ */}
+        {/* ════════════════════════════════════════════════════════ */}
+        {/* TICKET VIEW                                            */}
+        {/* ════════════════════════════════════════════════════════ */}
         {step === "ticket" && ticket && (
           <div
             className="fade-in"
@@ -2809,7 +2932,6 @@ export default function App() {
                   overflow: "hidden",
                 }}
               >
-                {/* Ticket Header */}
                 <div
                   style={{
                     background: "linear-gradient(135deg, #1e3a8a, #2563eb)",
@@ -2880,7 +3002,6 @@ export default function App() {
                     {SCHOOL_NAME} · {DEPT}
                   </div>
                 </div>
-
                 {/* Tear line */}
                 <div style={{ position: "relative", height: 0 }}>
                   <div
@@ -2915,8 +3036,6 @@ export default function App() {
                     }}
                   />
                 </div>
-
-                {/* Ticket Body */}
                 <div style={{ padding: "28px 28px 24px" }}>
                   <div
                     style={{
@@ -2961,7 +3080,6 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-
                   {/* Venue */}
                   <div
                     style={{
@@ -2986,7 +3104,7 @@ export default function App() {
                       {VENUE}
                     </div>
                   </div>
-
+                  {/* Queue position */}
                   <div
                     style={{
                       background: "var(--blue-50)",
@@ -3008,7 +3126,10 @@ export default function App() {
                         }}
                       >
                         {queuePosition === null ? (
-                          <>Calculating your live queue position...</>
+                          <>
+                            Your ticket is <strong>{ticket.number}</strong>.
+                            Please arrive 10 minutes before your slot.
+                          </>
                         ) : queuePosition === 0 ? (
                           <>
                             <strong>You are next!</strong> Please proceed to
@@ -3023,7 +3144,6 @@ export default function App() {
                       </div>
                     </div>
                   </div>
-
                   <div
                     style={{
                       fontSize: 10,
@@ -3034,7 +3154,6 @@ export default function App() {
                   >
                     Issued: {ticket.issued}
                   </div>
-
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       style={{
@@ -3149,7 +3268,6 @@ export default function App() {
                 "0 0 80px rgba(34,197,94,0.35), 0 24px 64px rgba(0,0,0,0.5)",
             }}
           >
-            {/* Pulsing ring */}
             <div
               className="your-turn-pulse"
               style={{
@@ -3166,7 +3284,6 @@ export default function App() {
             >
               <BellRing size={44} color="#4ade80" className="bell-shake" />
             </div>
-
             <div
               style={{
                 fontSize: 13,
@@ -3178,7 +3295,6 @@ export default function App() {
             >
               {SCHOOL_NAME.toUpperCase()} · ENROLLMENT QUEUE
             </div>
-
             <div
               style={{
                 fontFamily: "'Outfit', sans-serif",
@@ -3192,7 +3308,6 @@ export default function App() {
             >
               IT IS YOUR TURN
             </div>
-
             <div
               style={{
                 fontFamily: "'Space Mono', monospace",
@@ -3206,7 +3321,6 @@ export default function App() {
             >
               {ticket?.number}
             </div>
-
             <div
               style={{
                 fontSize: 15,
@@ -3221,12 +3335,10 @@ export default function App() {
                 {ticket?.window}
               </strong>
             </div>
-
             <div style={{ fontSize: 12, color: "#86efac", marginBottom: 32 }}>
               <MapPin size={12} style={{ display: "inline", marginRight: 4 }} />
               {VENUE}
             </div>
-
             <button
               onClick={() => setIsYourTurn(false)}
               style={{
