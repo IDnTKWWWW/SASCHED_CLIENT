@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
+import StudentLogin from "./StudentLogin";
 import {
   CalendarDays,
   Clock,
@@ -23,6 +24,7 @@ import {
   Zap,
   CalendarClock,
   BellRing,
+  LogOut,
 } from "lucide-react";
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
@@ -30,13 +32,6 @@ const SCHOOL_NAME = "STI Calamba";
 const DEPT = "(SAS) Appointment system";
 const VENUE = "First Floor, Main Building";
 const BOOKING_WINDOW_DAYS = 14;
-
-// ─── MOCK AUTHENTICATION ──────────────────────────────────────────────────────
-const LOGGED_IN_USER = {
-  name: "Juan dela Cruz",
-  studentId: "04-2201",
-  course: "BSIT",
-};
 
 // ─── WINDOWS / DEPARTMENTS ────────────────────────────────────────────────────
 const WINDOWS = [
@@ -112,6 +107,11 @@ export default function App() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  // ── Auth State ───────────────────────────────────────────────
+  const [session, setSession] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  // ── Booking State ────────────────────────────────────────────
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
   const [selectedDate, setSelectedDate] = useState(null);
@@ -125,6 +125,10 @@ export default function App() {
   const [queuePosition, setQueuePosition] = useState(null);
   const [isYourTurn, setIsYourTurn] = useState(false);
 
+  // ── Window Status State (Admin Controls) ──────────────────────
+  const [cashierStatus, setCashierStatus] = useState("open");
+  const [registrarStatus, setRegistrarStatus] = useState("open");
+
   // ── Split "Now Serving" per department ──────────────────────
   const [nowServingCashier, setNowServingCashier] = useState(null);
   const [nowServingRegistrar, setNowServingRegistrar] = useState(null);
@@ -135,6 +139,60 @@ export default function App() {
 
   // ── Total across both departments ───────────────────────────
   const [liveQueueCount, setLiveQueueCount] = useState(null);
+
+  // ── Auth Gatekeeper ──────────────────────────────────────────
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthReady(true);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // ── Logout ───────────────────────────────────────────────────
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  // ── Derive user identity from session ───────────────────────
+  const userEmail = session?.user?.email || "";
+  let extractedName = "STI Student";
+  let extractedId = "";
+
+  if (userEmail) {
+    // Example: cruz.395692@calamba.sti.edu.ph
+    const localPart = userEmail.split("@")[0]; // "cruz.395692"
+    const nameParts = localPart.split("."); // ["cruz", "395692"]
+
+    if (nameParts.length >= 2) {
+      // Capitalize the first letter of the last name (e.g., "cruz" -> "Cruz")
+      const rawName = nameParts[0];
+      extractedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+
+      // Get the student number
+      extractedId = nameParts[1];
+    } else {
+      // Fallback just in case they have a weird email format
+      extractedName = localPart;
+      extractedId = "Unknown";
+    }
+  }
+
+  // Check if Supabase has a real Display Name saved, otherwise use our extracted name
+  const finalName = session?.user?.user_metadata?.display_name || extractedName;
+
+  const currentUser = {
+    name: finalName,
+    studentId: extractedId,
+    course: "BSIT",
+  };
 
   // ── Pulse animation ─────────────────────────────────────────
   useEffect(() => {
@@ -192,6 +250,18 @@ export default function App() {
           waitingData.filter((r) => r.department === "Registrar")
         );
         setLiveQueueCount(count !== null ? count : waitingData.length);
+      }
+
+      // 3. Window Statuses
+      const { data: windowData } = await supabase
+        .from("window_status")
+        .select("cashier_status, registrar_status")
+        .eq("id", 1)
+        .single();
+
+      if (windowData) {
+        setCashierStatus(windowData.cashier_status || "open");
+        setRegistrarStatus(windowData.registrar_status || "open");
       }
     };
 
@@ -293,6 +363,18 @@ export default function App() {
           }
         }
       )
+      // Window Status changed (Admin triggered)
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "window_status" },
+        (payload) => {
+          const row = payload.new;
+          if (row.id === 1) {
+            if (row.cashier_status) setCashierStatus(row.cashier_status);
+            if (row.registrar_status) setRegistrarStatus(row.registrar_status);
+          }
+        }
+      )
       .subscribe();
 
     // Because the dependency array is empty, this connection will NEVER drop!
@@ -301,13 +383,40 @@ export default function App() {
     };
   }, []);
 
-  // ── Derived: nowServing for the user's department ────────────
-  const userDeptNowServing =
-    ticket?.window === "Cashier Window"
-      ? nowServingCashier
-      : ticket?.window === "Registrar Window"
-      ? nowServingRegistrar
-      : null;
+  // ── Notice Board Independent Card Theming Factory ───────────
+  const getNoticeForWindow = (windowName, status) => {
+    if (status === "closed") {
+      return {
+        bg: "linear-gradient(135deg, #fef2f2, #fee2e2)",
+        border: "#fca5a5",
+        iconColor: "#dc2626",
+        titleColor: "#991b1b",
+        textColor: "#7f1d1d",
+        title: `${windowName} is Closed`,
+        text: "This window is currently closed for the day. Please check back later.",
+      };
+    } else if (status === "cutoff") {
+      return {
+        bg: "linear-gradient(135deg, #fffbeb, #fef3c7)",
+        border: "#fde68a",
+        iconColor: "#d97706",
+        titleColor: "#92400e",
+        textColor: "#78350f",
+        title: `${windowName} Cut-off Active`,
+        text: "We are nearing capacity. Only pre-booked slots are currently being accepted for this window.",
+      };
+    } else {
+      return {
+        bg: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
+        border: "#bbf7d0",
+        iconColor: "#16a34a",
+        titleColor: "#166534",
+        textColor: "#14532d",
+        title: `${windowName} is Open`,
+        text: "Standard operations are ongoing. Pre-book your slot or walk in to get a ticket.",
+      };
+    }
+  };
 
   // ── Date helpers ─────────────────────────────────────────────
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);
@@ -361,6 +470,16 @@ export default function App() {
 
   const timeSlots = buildTimeSlots(selectedIsToday);
 
+  // ── Walk-in Lockout Logic ─────────────────────────────────────
+  const activeWindowStatus =
+    selectedWindow === "cashier"
+      ? cashierStatus
+      : selectedWindow === "registrar"
+      ? registrarStatus
+      : "open";
+  const walkinDisabled =
+    activeWindowStatus === "cutoff" || activeWindowStatus === "closed";
+
   // ── Booking (Fixed Supabase Connection!) ──────────────────────
   const handleBook = async () => {
     const windowObj = WINDOWS.find((w) => w.id === selectedWindow);
@@ -375,9 +494,9 @@ export default function App() {
     const { error } = await supabase.from("queue_tickets").insert([
       {
         ticket_number: num,
-        student_name: LOGGED_IN_USER.name,
-        student_id: LOGGED_IN_USER.studentId,
-        course: LOGGED_IN_USER.course,
+        student_name: currentUser.name,
+        student_id: currentUser.studentId,
+        course: currentUser.course,
         destination_window: windowLabel,
         department: department,
         appointment_time: selectedSlot.time,
@@ -398,9 +517,9 @@ export default function App() {
         selectedDate.year
       }`,
       time: selectedSlot.time,
-      name: LOGGED_IN_USER.name,
-      id: LOGGED_IN_USER.studentId,
-      course: LOGGED_IN_USER.course,
+      name: currentUser.name,
+      id: currentUser.studentId,
+      course: currentUser.course,
       window: windowLabel,
       venue: VENUE,
       issued: new Date().toLocaleString(),
@@ -610,6 +729,44 @@ export default function App() {
     </div>
   );
 
+  // ── Auth Loading Spinner ─────────────────────────────────────
+  if (!authReady) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background:
+            "linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 40%, #f5f8ff 100%)",
+          fontFamily: "'Outfit', sans-serif",
+        }}
+      >
+        <style>{`
+          @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+          @keyframes spinAuth { to { transform: rotate(360deg); } }
+        `}</style>
+        <div
+          style={{
+            width: 40,
+            height: 40,
+            border: "3.5px solid rgba(37,99,235,0.15)",
+            borderTop: "3.5px solid #2563eb",
+            borderRadius: "50%",
+            animation: "spinAuth 0.75s linear infinite",
+          }}
+        />
+      </div>
+    );
+  }
+
+  // ── Gate: show login if no session ──────────────────────────
+  if (!session) {
+    return <StudentLogin onLoginSuccess={() => {}} />;
+  }
+
+  // ── Authenticated App ────────────────────────────────────────
   return (
     <div
       style={{
@@ -655,14 +812,16 @@ export default function App() {
         .queue-item:hover { background: var(--blue-50); }
         .window-btn { transition: all 0.18s ease; cursor: pointer; }
         .window-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(37,99,235,0.15); }
-        .mode-card { transition: all 0.2s ease; cursor: pointer; }
-        .mode-card:hover { transform: translateY(-3px); }
+        .mode-card { transition: all 0.2s ease; }
+        .mode-card:hover:not(:disabled) { transform: translateY(-3px); }
         .your-turn-modal { animation: yourTurnIn 0.5s cubic-bezier(.22,.68,0,1.2) forwards; }
         @keyframes yourTurnIn { from{opacity:0;transform:scale(0.92);}to{opacity:1;transform:scale(1);} }
         .your-turn-pulse { animation: yourTurnPulse 1.4s ease-in-out infinite; }
         @keyframes yourTurnPulse { 0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.85;transform:scale(1.03);} }
         .bell-shake { animation: bellShake 0.8s ease-in-out infinite; }
         @keyframes bellShake { 0%,100%{transform:rotate(0deg);}20%{transform:rotate(-18deg);}40%{transform:rotate(18deg);}60%{transform:rotate(-12deg);}80%{transform:rotate(12deg);} }
+        .btn-logout { transition: all 0.18s ease; }
+        .btn-logout:hover { background: rgba(239,68,68,0.08) !important; color: #ef4444 !important; border-color: rgba(239,68,68,0.25) !important; }
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--slate-300); border-radius: 99px; }
@@ -691,7 +850,6 @@ export default function App() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Custom Logo Image */}
             <img
               src="/logo.png"
               alt="STI Logo"
@@ -702,7 +860,6 @@ export default function App() {
                 borderRadius: 10,
               }}
             />
-            {/* Text matching your screenshot */}
             <div>
               <div
                 style={{
@@ -727,6 +884,7 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Student ID badge */}
             <div
               style={{
                 display: "flex",
@@ -746,37 +904,34 @@ export default function App() {
                   fontWeight: 600,
                 }}
               >
-                {LOGGED_IN_USER.name}
+                {currentUser.name}
               </span>
               <span style={{ fontSize: 11, color: "var(--blue-400)" }}>
-                · {LOGGED_IN_USER.studentId}
+                · {currentUser.studentId}
               </span>
             </div>
-            <div
+            {/* Log Out button */}
+            <button
+              className="btn-logout"
+              onClick={handleLogout}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-                background: "var(--blue-50)",
-                border: "1px solid var(--blue-100)",
+                background: "transparent",
+                border: "1px solid var(--slate-200)",
                 borderRadius: 99,
                 padding: "5px 12px",
                 fontSize: 12,
-                color: "var(--blue-600)",
-                fontWeight: 500,
+                color: "var(--slate-500)",
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "'Outfit', sans-serif",
               }}
             >
-              <div
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "var(--green-500)",
-                  animation: "pulse 2s infinite",
-                }}
-              />
-              Live System Active
-            </div>
+              <LogOut size={13} strokeWidth={2} />
+              Log Out
+            </button>
           </div>
         </div>
       </header>
@@ -1238,53 +1393,62 @@ export default function App() {
               <div
                 style={{ display: "flex", flexDirection: "column", gap: 14 }}
               >
-                <div
-                  className="card-shadow"
-                  style={{
-                    background: "linear-gradient(135deg, #fffbeb, #fef3c7)",
-                    border: "1px solid #fde68a",
-                    borderRadius: 16,
-                    padding: "18px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: 10,
-                      alignItems: "flex-start",
-                    }}
-                  >
-                    <AlertCircle
-                      size={16}
-                      color="#d97706"
-                      style={{ marginTop: 1, flexShrink: 0 }}
-                    />
-                    <div>
+                {/* ── SEPARATED ANNOUNCEMENT BOARD CARDS ── */}
+                {[
+                  { name: "Cashier", status: cashierStatus },
+                  { name: "Registrar", status: registrarStatus },
+                ].map((win) => {
+                  const notice = getNoticeForWindow(win.name, win.status);
+                  return (
+                    <div
+                      key={win.name}
+                      className="card-shadow"
+                      style={{
+                        background: notice.bg,
+                        border: `1px solid ${notice.border}`,
+                        borderRadius: 16,
+                        padding: "18px",
+                        transition: "all 0.3s ease",
+                      }}
+                    >
                       <div
                         style={{
-                          fontWeight: 700,
-                          fontSize: 13,
-                          color: "#92400e",
-                          marginBottom: 4,
+                          display: "flex",
+                          gap: 10,
+                          alignItems: "flex-start",
                         }}
                       >
-                        Enrollment Notice
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "#78350f",
-                          lineHeight: 1.6,
-                        }}
-                      >
-                        Enrollment for S.Y. 2025–2026 runs{" "}
-                        <strong>June 9–20, 2025</strong>. Bring your Form 138,
-                        medical clearance, and 2×2 photos. Late applications are
-                        not accepted.
+                        <AlertCircle
+                          size={16}
+                          color={notice.iconColor}
+                          style={{ marginTop: 1, flexShrink: 0 }}
+                        />
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: 700,
+                              fontSize: 13,
+                              color: notice.titleColor,
+                              marginBottom: 4,
+                            }}
+                          >
+                            {notice.title}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 12,
+                              color: notice.textColor,
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            {notice.text}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </div>
+                  );
+                })}
+
                 <div
                   className="card-shadow"
                   style={{
@@ -1762,7 +1926,9 @@ export default function App() {
                   >
                     <button
                       className="mode-card"
+                      disabled={walkinDisabled}
                       onClick={() => {
+                        if (walkinDisabled) return;
                         setBookingMode("now");
                         setSelectedSlot({
                           id: 0,
@@ -1779,9 +1945,14 @@ export default function App() {
                         textAlign: "left",
                         padding: "20px 22px",
                         borderRadius: 16,
-                        border: "2px solid var(--blue-200)",
-                        background: "linear-gradient(135deg, #eff6ff, #dbeafe)",
-                        cursor: "pointer",
+                        border: walkinDisabled
+                          ? "2px solid var(--slate-200)"
+                          : "2px solid var(--blue-200)",
+                        background: walkinDisabled
+                          ? "var(--slate-50)"
+                          : "linear-gradient(135deg, #eff6ff, #dbeafe)",
+                        cursor: walkinDisabled ? "not-allowed" : "pointer",
+                        opacity: walkinDisabled ? 0.7 : 1,
                       }}
                     >
                       <div
@@ -1796,13 +1967,16 @@ export default function App() {
                             width: 46,
                             height: 46,
                             borderRadius: 13,
-                            background:
-                              "linear-gradient(135deg, #2563eb, #1d4ed8)",
+                            background: walkinDisabled
+                              ? "linear-gradient(135deg, #94a3b8, #64748b)"
+                              : "linear-gradient(135deg, #2563eb, #1d4ed8)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
                             flexShrink: 0,
-                            boxShadow: "0 4px 14px rgba(37,99,235,0.35)",
+                            boxShadow: walkinDisabled
+                              ? "none"
+                              : "0 4px 14px rgba(37,99,235,0.35)",
                           }}
                         >
                           <Zap size={22} color="white" />
@@ -1812,7 +1986,9 @@ export default function App() {
                             style={{
                               fontSize: 15,
                               fontWeight: 800,
-                              color: "var(--blue-800)",
+                              color: walkinDisabled
+                                ? "var(--slate-700)"
+                                : "var(--blue-800)",
                               letterSpacing: "-0.01em",
                               marginBottom: 4,
                             }}
@@ -1822,7 +1998,9 @@ export default function App() {
                           <div
                             style={{
                               fontSize: 12,
-                              color: "var(--blue-600)",
+                              color: walkinDisabled
+                                ? "var(--slate-500)"
+                                : "var(--blue-600)",
                               lineHeight: 1.6,
                             }}
                           >
@@ -1830,31 +2008,55 @@ export default function App() {
                             <strong>live queue immediately</strong> and served
                             in order of arrival.
                           </div>
-                          <div
-                            style={{
-                              marginTop: 10,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 5,
-                              background: "white",
-                              border: "1px solid var(--blue-200)",
-                              borderRadius: 99,
-                              padding: "4px 10px",
-                              fontSize: 11,
-                              color: "var(--blue-700)",
-                              fontWeight: 600,
-                            }}
-                          >
+                          {walkinDisabled ? (
                             <div
                               style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: "50%",
-                                background: "var(--green-500)",
+                                marginTop: 10,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                background: "rgba(239,68,68,0.08)",
+                                border: "1px solid rgba(239,68,68,0.2)",
+                                borderRadius: 99,
+                                padding: "4px 10px",
+                                fontSize: 11,
+                                color: "var(--red-600)",
+                                fontWeight: 700,
                               }}
-                            />{" "}
-                            Walk-in · Proceeds to Confirm
-                          </div>
+                            >
+                              <AlertCircle size={10} /> Unavailable (
+                              {activeWindowStatus === "closed"
+                                ? "Window Closed"
+                                : "Cut-off Mode"}
+                              )
+                            </div>
+                          ) : (
+                            <div
+                              style={{
+                                marginTop: 10,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 5,
+                                background: "white",
+                                border: "1px solid var(--blue-200)",
+                                borderRadius: 99,
+                                padding: "4px 10px",
+                                fontSize: 11,
+                                color: "var(--blue-700)",
+                                fontWeight: 600,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 6,
+                                  height: 6,
+                                  borderRadius: "50%",
+                                  background: "var(--green-500)",
+                                }}
+                              />{" "}
+                              Walk-in · Proceeds to Confirm
+                            </div>
+                          )}
                         </div>
                       </div>
                     </button>
@@ -2601,7 +2803,7 @@ export default function App() {
                         color: "white",
                       }}
                     >
-                      {LOGGED_IN_USER.name
+                      {currentUser.name
                         .split(" ")
                         .map((n) => n[0])
                         .join("")
@@ -2617,7 +2819,7 @@ export default function App() {
                         letterSpacing: "-0.01em",
                       }}
                     >
-                      {LOGGED_IN_USER.name}
+                      {currentUser.name}
                     </div>
                     <div
                       style={{
@@ -2626,7 +2828,7 @@ export default function App() {
                         marginTop: 2,
                       }}
                     >
-                      {LOGGED_IN_USER.course}
+                      {currentUser.course}
                     </div>
                   </div>
                   <div
@@ -2654,8 +2856,8 @@ export default function App() {
                   }}
                 >
                   {[
-                    { label: "Student ID", value: LOGGED_IN_USER.studentId },
-                    { label: "Program", value: LOGGED_IN_USER.course },
+                    { label: "Student ID", value: currentUser.studentId },
+                    { label: "Program", value: currentUser.course },
                   ].map((f) => (
                     <div
                       key={f.label}
