@@ -125,6 +125,9 @@ export default function App() {
   const [queuePosition, setQueuePosition] = useState(null);
   const [isYourTurn, setIsYourTurn] = useState(false);
 
+  // ── 1-Ticket Policy State ────────────────────────────────────
+  const [hasActiveTicket, setHasActiveTicket] = useState(false);
+
   // ── Window Status State (Admin Controls) ──────────────────────
   const [cashierStatus, setCashierStatus] = useState("open");
   const [registrarStatus, setRegistrarStatus] = useState("open");
@@ -167,25 +170,19 @@ export default function App() {
   let extractedId = "";
 
   if (userEmail) {
-    // Example: cruz.395692@calamba.sti.edu.ph
-    const localPart = userEmail.split("@")[0]; // "cruz.395692"
-    const nameParts = localPart.split("."); // ["cruz", "395692"]
+    const localPart = userEmail.split("@")[0];
+    const nameParts = localPart.split(".");
 
     if (nameParts.length >= 2) {
-      // Capitalize the first letter of the last name (e.g., "cruz" -> "Cruz")
       const rawName = nameParts[0];
       extractedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-
-      // Get the student number
       extractedId = nameParts[1];
     } else {
-      // Fallback just in case they have a weird email format
       extractedName = localPart;
       extractedId = "Unknown";
     }
   }
 
-  // Check if Supabase has a real Display Name saved, otherwise use our extracted name
   const finalName = session?.user?.user_metadata?.display_name || extractedName;
 
   const currentUser = {
@@ -212,7 +209,37 @@ export default function App() {
   // ── Fetch & Realtime Sync ────────────────────────────────────
   useEffect(() => {
     const fetchInitial = async () => {
-      // 1. Now Serving (Fetch both windows)
+      if (!session) return;
+
+      // 1. Check for User's Active Ticket (One-Ticket Policy)
+      const { data: myTicketData } = await supabase
+        .from("queue_tickets")
+        .select("*")
+        .eq("student_id", currentUser.studentId)
+        .in("status", ["waiting", "serving"])
+        .single();
+
+      if (myTicketData) {
+        setHasActiveTicket(true);
+        setTicket({
+          number: myTicketData.ticket_number,
+          date: "Today",
+          time: myTicketData.appointment_time,
+          name: myTicketData.student_name,
+          id: myTicketData.student_id,
+          course: myTicketData.course,
+          window: myTicketData.destination_window,
+          venue: VENUE,
+          issued: new Date(myTicketData.created_at).toLocaleString(),
+        });
+        // If serving, show alert
+        if (myTicketData.status === "serving") {
+          setIsYourTurn(true);
+          setQueuePosition(0);
+        }
+      }
+
+      // 2. Now Serving (Fetch both windows)
       const { data: servingData } = await supabase
         .from("queue_tickets")
         .select("ticket_number, department")
@@ -227,7 +254,7 @@ export default function App() {
         if (registrarRow) setNowServingRegistrar(registrarRow.ticket_number);
       }
 
-      // 2. Waiting Queue (Fetch rows + exact count in one go so they never desync)
+      // 3. Waiting Queue
       const {
         data: waitingData,
         count,
@@ -250,9 +277,17 @@ export default function App() {
           waitingData.filter((r) => r.department === "Registrar")
         );
         setLiveQueueCount(count !== null ? count : waitingData.length);
+
+        // Find my position if I have a ticket
+        if (myTicketData && myTicketData.status === "waiting") {
+          const myIndex = waitingData.findIndex(
+            (r) => r.ticket_number === myTicketData.ticket_number
+          );
+          setQueuePosition(myIndex === -1 ? 0 : myIndex + 1);
+        }
       }
 
-      // 3. Window Statuses
+      // 4. Window Statuses
       const { data: windowData } = await supabase
         .from("window_status")
         .select("cashier_status, registrar_status")
@@ -339,12 +374,28 @@ export default function App() {
             }
           }
 
-          // Check if it's YOUR turn (Using a Ref so the socket never drops!)
-          if (ticketRef.current && row.status === "serving") {
-            if (row.ticket_number === ticketRef.current.number) {
+          // Check if it's YOUR turn or your ticket ended
+          if (
+            ticketRef.current &&
+            row.ticket_number === ticketRef.current.number
+          ) {
+            if (row.status === "serving") {
               setIsYourTurn(true);
+              setQueuePosition(0);
+            } else if (["served", "noshow", "removed"].includes(row.status)) {
+              // Session concluded
+              alert(
+                `Your session has concluded (Status: ${row.status.toUpperCase()}).`
+              );
+              setHasActiveTicket(false);
+              setTicket(null);
+              setIsYourTurn(false);
+              setStep("home");
             }
+          }
 
+          // Recalculate position if still waiting
+          if (ticketRef.current && row.status === "serving") {
             const fetchPosition = async () => {
               const { data, err } = await supabase
                 .from("queue_tickets")
@@ -356,7 +407,7 @@ export default function App() {
                 const myIndex = data.findIndex(
                   (r) => r.ticket_number === ticketRef.current.number
                 );
-                setQueuePosition(myIndex === -1 ? 0 : myIndex + 1);
+                if (myIndex !== -1) setQueuePosition(myIndex + 1);
               }
             };
             fetchPosition();
@@ -377,11 +428,10 @@ export default function App() {
       )
       .subscribe();
 
-    // Because the dependency array is empty, this connection will NEVER drop!
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []);
+  }, [session, currentUser.studentId]);
 
   // ── Notice Board Independent Card Theming Factory ───────────
   const getNoticeForWindow = (windowName, status) => {
@@ -470,7 +520,7 @@ export default function App() {
 
   const timeSlots = buildTimeSlots(selectedIsToday);
 
-  // ── Walk-in Lockout Logic ─────────────────────────────────────
+  // ── Live Lockout Logic Gateway ───────────────────────────────
   const activeWindowStatus =
     selectedWindow === "cashier"
       ? cashierStatus
@@ -478,10 +528,20 @@ export default function App() {
       ? registrarStatus
       : "open";
   const walkinDisabled =
-    activeWindowStatus === "cutoff" || activeWindowStatus === "closed";
+    !selectedWindow ||
+    activeWindowStatus === "cutoff" ||
+    activeWindowStatus === "closed";
+  const laterTodayDisabled = !selectedWindow || activeWindowStatus === "closed";
 
-  // ── Booking (Fixed Supabase Connection!) ──────────────────────
+  // ── Booking Operation ────────────────────────────────────────
   const handleBook = async () => {
+    if (hasActiveTicket) {
+      alert(
+        "You already have an active appointment. Please complete or cancel it first."
+      );
+      return;
+    }
+
     const windowObj = WINDOWS.find((w) => w.id === selectedWindow);
     const windowLabel = windowObj?.label || "—";
     const department = windowObj?.dept || "Cashier";
@@ -511,6 +571,7 @@ export default function App() {
       return;
     }
 
+    setHasActiveTicket(true);
     setTicket({
       number: num,
       date: `${MONTHS[selectedDate.month]} ${selectedDate.day}, ${
@@ -534,9 +595,7 @@ export default function App() {
     setSelectedSlot(null);
     setSelectedWindow(null);
     setBookingMode(null);
-    setTicket(null);
     setTicketVisible(false);
-    setQueuePosition(null);
   };
 
   // ── Reusable queue column ─────────────────────────────────────
@@ -850,6 +909,7 @@ export default function App() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {/* Custom Logo Image */}
             <img
               src="/logo.png"
               alt="STI Logo"
@@ -860,6 +920,7 @@ export default function App() {
                 borderRadius: 10,
               }}
             />
+            {/* Text matching your screenshot */}
             <div>
               <div
                 style={{
@@ -909,6 +970,32 @@ export default function App() {
               <span style={{ fontSize: 11, color: "var(--blue-400)" }}>
                 · {currentUser.studentId}
               </span>
+            </div>
+            {/* Live System badge */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                background: "var(--blue-50)",
+                border: "1px solid var(--blue-100)",
+                borderRadius: 99,
+                padding: "5px 12px",
+                fontSize: 12,
+                color: "var(--blue-600)",
+                fontWeight: 500,
+              }}
+            >
+              <div
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: "var(--green-500)",
+                  animation: "pulse 2s infinite",
+                }}
+              />
+              Live System Active
             </div>
             {/* Log Out button */}
             <button
@@ -1110,9 +1197,13 @@ export default function App() {
                         marginBottom: 8,
                       }}
                     >
-                      Skip the Line.
+                      {hasActiveTicket
+                        ? "You're in the Queue."
+                        : "Skip the Line."}
                       <br />
-                      Book Your Slot Online.
+                      {hasActiveTicket
+                        ? "Monitor your status."
+                        : "Book Your Slot Online."}
                     </h1>
                     <p
                       style={{
@@ -1122,21 +1213,29 @@ export default function App() {
                         maxWidth: 400,
                       }}
                     >
-                      Reserve your enrollment appointment in minutes. Get a
-                      digital ticket and arrive at your exact time — no waiting.
+                      {hasActiveTicket
+                        ? "You already have an active ticket. Click below to view your digital ticket and see your real-time position."
+                        : "Reserve your enrollment appointment in minutes. Get a digital ticket and arrive at your exact time — no waiting."}
                     </p>
                     <button
                       className="btn-primary"
-                      onClick={() => setStep("booking")}
+                      onClick={() => {
+                        if (hasActiveTicket) {
+                          setStep("ticket");
+                          setTicketVisible(true);
+                        } else {
+                          setStep("booking");
+                        }
+                      }}
                       style={{
                         marginTop: 22,
-                        background: "white",
-                        color: "var(--blue-700)",
+                        background: hasActiveTicket ? "#fbbf24" : "white",
+                        color: hasActiveTicket ? "#78350f" : "var(--blue-700)",
                         border: "none",
                         borderRadius: 12,
                         padding: "12px 24px",
                         fontSize: 14,
-                        fontWeight: 700,
+                        fontWeight: 800,
                         cursor: "pointer",
                         display: "inline-flex",
                         alignItems: "center",
@@ -1144,7 +1243,10 @@ export default function App() {
                         fontFamily: "'Outfit', sans-serif",
                       }}
                     >
-                      Book an Appointment <ArrowRight size={16} />
+                      {hasActiveTicket
+                        ? "View Active Ticket"
+                        : "Book an Appointment"}{" "}
+                      <ArrowRight size={16} />
                     </button>
                   </div>
 
@@ -1449,73 +1551,75 @@ export default function App() {
                   );
                 })}
 
-                <div
-                  className="card-shadow"
-                  style={{
-                    background: "white",
-                    border: "1px solid rgba(226,232,240,0.6)",
-                    borderRadius: 16,
-                    padding: "18px",
-                  }}
-                >
+                {!hasActiveTicket && (
                   <div
+                    className="card-shadow"
                     style={{
-                      fontWeight: 700,
-                      fontSize: 13,
-                      color: "var(--slate-700)",
-                      marginBottom: 14,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
+                      background: "white",
+                      border: "1px solid rgba(226,232,240,0.6)",
+                      borderRadius: 16,
+                      padding: "18px",
                     }}
                   >
-                    <MapPin size={14} color="var(--blue-600)" /> Enrollment
-                    Venue
+                    <div
+                      style={{
+                        fontWeight: 700,
+                        fontSize: 13,
+                        color: "var(--slate-700)",
+                        marginBottom: 14,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <MapPin size={14} color="var(--blue-600)" /> Enrollment
+                      Venue
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: "var(--slate-600)",
+                        lineHeight: 1.7,
+                      }}
+                    >
+                      <strong>{VENUE}</strong>
+                      <br />
+                      {SCHOOL_NAME} Campus
+                      <br />
+                      Open: Mon–Fri, 8:00 AM – 4:00 PM
+                    </div>
+                    <div
+                      style={{
+                        marginTop: 14,
+                        height: 1,
+                        background: "var(--slate-100)",
+                      }}
+                    />
+                    <button
+                      onClick={() => setStep("booking")}
+                      className="btn-primary"
+                      style={{
+                        marginTop: 14,
+                        width: "100%",
+                        background: "var(--blue-600)",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 10,
+                        padding: "11px",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        fontFamily: "'Outfit', sans-serif",
+                      }}
+                    >
+                      Book My Appointment <ArrowRight size={15} />
+                    </button>
                   </div>
-                  <div
-                    style={{
-                      fontSize: 12,
-                      color: "var(--slate-600)",
-                      lineHeight: 1.7,
-                    }}
-                  >
-                    <strong>{VENUE}</strong>
-                    <br />
-                    {SCHOOL_NAME} Campus
-                    <br />
-                    Open: Mon–Fri, 8:00 AM – 4:00 PM
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 14,
-                      height: 1,
-                      background: "var(--slate-100)",
-                    }}
-                  />
-                  <button
-                    onClick={() => setStep("booking")}
-                    className="btn-primary"
-                    style={{
-                      marginTop: 14,
-                      width: "100%",
-                      background: "var(--blue-600)",
-                      color: "white",
-                      border: "none",
-                      borderRadius: 10,
-                      padding: "11px",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      fontFamily: "'Outfit', sans-serif",
-                    }}
-                  >
-                    Book My Appointment <ArrowRight size={15} />
-                  </button>
-                </div>
+                )}
               </div>
             </div>
           </div>
@@ -1924,20 +2028,14 @@ export default function App() {
                       gap: 14,
                     }}
                   >
+                    {/* WALK-IN BUTTON */}
                     <button
                       className="mode-card"
                       disabled={walkinDisabled}
                       onClick={() => {
                         if (walkinDisabled) return;
                         setBookingMode("now");
-                        setSelectedSlot({
-                          id: 0,
-                          time: "Walk-in / Now",
-                          hour: null,
-                          minute: null,
-                          available: 1,
-                          total: 1,
-                        });
+                        setSelectedSlot({ id: 0, time: "Walk-in / Now" });
                         if (selectedWindow) setStep("confirm");
                       }}
                       style={{
@@ -1952,31 +2050,21 @@ export default function App() {
                           ? "var(--slate-50)"
                           : "linear-gradient(135deg, #eff6ff, #dbeafe)",
                         cursor: walkinDisabled ? "not-allowed" : "pointer",
-                        opacity: walkinDisabled ? 0.7 : 1,
+                        opacity: walkinDisabled ? 0.6 : 1,
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 14,
-                        }}
-                      >
+                      <div style={{ display: "flex", gap: 14 }}>
                         <div
                           style={{
                             width: 46,
                             height: 46,
                             borderRadius: 13,
                             background: walkinDisabled
-                              ? "linear-gradient(135deg, #94a3b8, #64748b)"
+                              ? "var(--slate-400)"
                               : "linear-gradient(135deg, #2563eb, #1d4ed8)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            flexShrink: 0,
-                            boxShadow: walkinDisabled
-                              ? "none"
-                              : "0 4px 14px rgba(37,99,235,0.35)",
                           }}
                         >
                           <Zap size={22} color="white" />
@@ -1987,10 +2075,8 @@ export default function App() {
                               fontSize: 15,
                               fontWeight: 800,
                               color: walkinDisabled
-                                ? "var(--slate-700)"
+                                ? "var(--slate-600)"
                                 : "var(--blue-800)",
-                              letterSpacing: "-0.01em",
-                              marginBottom: 4,
                             }}
                           >
                             Get a Ticket Now
@@ -1998,23 +2084,19 @@ export default function App() {
                           <div
                             style={{
                               fontSize: 12,
-                              color: walkinDisabled
-                                ? "var(--slate-500)"
-                                : "var(--blue-600)",
-                              lineHeight: 1.6,
+                              color: "var(--slate-500)",
+                              marginTop: 2,
                             }}
                           >
-                            Skip time-slot selection. You'll be added to the{" "}
-                            <strong>live queue immediately</strong> and served
-                            in order of arrival.
+                            Enters the instant queue. Served on arrival.
                           </div>
                           {walkinDisabled ? (
                             <div
                               style={{
                                 marginTop: 10,
                                 display: "inline-flex",
-                                alignItems: "center",
                                 gap: 5,
+                                alignItems: "center",
                                 background: "rgba(239,68,68,0.08)",
                                 border: "1px solid rgba(239,68,68,0.2)",
                                 borderRadius: 99,
@@ -2024,26 +2106,26 @@ export default function App() {
                                 fontWeight: 700,
                               }}
                             >
-                              <AlertCircle size={10} /> Unavailable (
-                              {activeWindowStatus === "closed"
-                                ? "Window Closed"
-                                : "Cut-off Mode"}
-                              )
+                              <AlertCircle size={10} />{" "}
+                              {!selectedWindow
+                                ? "Select a window first"
+                                : activeWindowStatus === "closed"
+                                ? "Window Closed Today"
+                                : "Cut-off Mode Active"}
                             </div>
                           ) : (
                             <div
                               style={{
                                 marginTop: 10,
                                 display: "inline-flex",
-                                alignItems: "center",
                                 gap: 5,
+                                alignItems: "center",
                                 background: "white",
                                 border: "1px solid var(--blue-200)",
                                 borderRadius: 99,
                                 padding: "4px 10px",
                                 fontSize: 11,
                                 color: "var(--blue-700)",
-                                fontWeight: 600,
                               }}
                             >
                               <div
@@ -2054,44 +2136,46 @@ export default function App() {
                                   background: "var(--green-500)",
                                 }}
                               />{" "}
-                              Walk-in · Proceeds to Confirm
+                              Walk-in Open
                             </div>
                           )}
                         </div>
                       </div>
                     </button>
+
+                    {/* SCHEDULE FOR LATER BUTTON */}
                     <button
                       className="mode-card"
-                      onClick={() => setBookingMode("later")}
+                      disabled={laterTodayDisabled}
+                      onClick={() => {
+                        if (laterTodayDisabled) return;
+                        setBookingMode("later");
+                      }}
                       style={{
                         width: "100%",
                         textAlign: "left",
                         padding: "20px 22px",
                         borderRadius: 16,
-                        border: "2px solid var(--slate-200)",
+                        border: laterTodayDisabled
+                          ? "2px solid var(--slate-200)"
+                          : "2px solid var(--slate-300)",
                         background: "var(--slate-50)",
-                        cursor: "pointer",
+                        cursor: laterTodayDisabled ? "not-allowed" : "pointer",
+                        opacity: laterTodayDisabled ? 0.6 : 1,
                       }}
                     >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "flex-start",
-                          gap: 14,
-                        }}
-                      >
+                      <div style={{ display: "flex", gap: 14 }}>
                         <div
                           style={{
                             width: 46,
                             height: 46,
                             borderRadius: 13,
-                            background:
-                              "linear-gradient(135deg, #475569, #334155)",
+                            background: laterTodayDisabled
+                              ? "var(--slate-300)"
+                              : "linear-gradient(135deg, #475569, #334155)",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
-                            flexShrink: 0,
-                            boxShadow: "0 4px 14px rgba(51,65,85,0.25)",
                           }}
                         >
                           <CalendarClock size={22} color="white" />
@@ -2101,40 +2185,40 @@ export default function App() {
                             style={{
                               fontSize: 15,
                               fontWeight: 800,
-                              color: "var(--slate-700)",
-                              letterSpacing: "-0.01em",
-                              marginBottom: 4,
+                              color: laterTodayDisabled
+                                ? "var(--slate-500)"
+                                : "var(--slate-700)",
                             }}
                           >
                             Schedule for Later Today
                           </div>
                           <div
-                            style={{
-                              fontSize: 12,
-                              color: "var(--slate-500)",
-                              lineHeight: 1.6,
-                            }}
+                            style={{ fontSize: 12, color: "var(--slate-500)" }}
                           >
-                            Pick a <strong>specific time slot</strong> later in
-                            the day. Only remaining slots are shown.
+                            Select a structural time reservation slot.
                           </div>
-                          <div
-                            style={{
-                              marginTop: 10,
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 5,
-                              background: "white",
-                              border: "1px solid var(--slate-200)",
-                              borderRadius: 99,
-                              padding: "4px 10px",
-                              fontSize: 11,
-                              color: "var(--slate-600)",
-                              fontWeight: 600,
-                            }}
-                          >
-                            <Clock size={10} /> Choose a time slot →
-                          </div>
+                          {laterTodayDisabled ? (
+                            <div
+                              style={{
+                                marginTop: 10,
+                                display: "inline-flex",
+                                gap: 5,
+                                alignItems: "center",
+                                background: "rgba(239,68,68,0.08)",
+                                border: "1px solid rgba(239,68,68,0.2)",
+                                borderRadius: 99,
+                                padding: "4px 10px",
+                                fontSize: 11,
+                                color: "var(--red-600)",
+                                fontWeight: 700,
+                              }}
+                            >
+                              <AlertCircle size={10} />{" "}
+                              {!selectedWindow
+                                ? "Select a window first"
+                                : "Window Closed Today"}
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </button>
@@ -2365,109 +2449,6 @@ export default function App() {
                         })}
                       </div>
                     )}
-                  </div>
-                )}
-
-                {selectedDate && selectedIsToday && bookingMode === "now" && (
-                  <div className="fade-in">
-                    <button
-                      onClick={() => {
-                        setBookingMode(null);
-                        setSelectedSlot(null);
-                      }}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                        marginBottom: 16,
-                        fontSize: 12,
-                        color: "var(--blue-600)",
-                        background: "none",
-                        border: "none",
-                        cursor: "pointer",
-                        fontFamily: "'Outfit',sans-serif",
-                        fontWeight: 600,
-                      }}
-                    >
-                      <ChevronLeft size={14} /> Back to options
-                    </button>
-                    <div
-                      style={{
-                        background: "linear-gradient(135deg, #eff6ff, #dbeafe)",
-                        border: "1px solid var(--blue-200)",
-                        borderRadius: 14,
-                        padding: "18px 20px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 10,
-                          marginBottom: 10,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 10,
-                            background:
-                              "linear-gradient(135deg, #2563eb, #1d4ed8)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            flexShrink: 0,
-                          }}
-                        >
-                          <Zap size={17} color="white" />
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 800,
-                            color: "var(--blue-800)",
-                          }}
-                        >
-                          Walk-in / Now selected
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 12,
-                          color: "var(--blue-700)",
-                          lineHeight: 1.7,
-                        }}
-                      >
-                        ⚠️ <strong>Almost done!</strong> Please select your
-                        destination window above (if you haven't) and click{" "}
-                        <strong>Continue to Confirm</strong> at the bottom of
-                        the screen.
-                      </div>
-                      <div
-                        style={{
-                          marginTop: 12,
-                          padding: "8px 12px",
-                          background: "white",
-                          borderRadius: 9,
-                          border: "1px solid var(--blue-100)",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                        }}
-                      >
-                        <Clock size={12} color="var(--blue-500)" />
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: "var(--blue-600)",
-                            fontWeight: 600,
-                          }}
-                        >
-                          Time Slot: Walk-in / Now
-                        </span>
-                      </div>
-                    </div>
                   </div>
                 )}
 
@@ -3110,7 +3091,9 @@ export default function App() {
                   letterSpacing: "-0.02em",
                 }}
               >
-                Booking Confirmed!
+                {hasActiveTicket && !ticketVisible
+                  ? "Active Appointment"
+                  : "Booking Confirmed!"}
               </div>
               <div
                 style={{
@@ -3119,11 +3102,13 @@ export default function App() {
                   marginTop: 4,
                 }}
               >
-                Your appointment has been successfully registered.
+                {hasActiveTicket && !ticketVisible
+                  ? "You have a live queue ticket. Wait for your turn."
+                  : "Your appointment has been successfully registered."}
               </div>
             </div>
 
-            {ticketVisible && (
+            {(ticketVisible || hasActiveTicket) && (
               <div
                 className="ticket-appear ticket-shadow"
                 style={{
@@ -3417,7 +3402,7 @@ export default function App() {
                         fontFamily: "'Outfit', sans-serif",
                       }}
                     >
-                      Done
+                      Return Home
                     </button>
                   </div>
                 </div>
