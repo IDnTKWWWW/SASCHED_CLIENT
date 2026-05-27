@@ -655,17 +655,7 @@ export default function App() {
             color: "var(--green-600)",
             fontWeight: 600,
           }}
-        >
-          <div
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: "var(--green-500)",
-            }}
-          />{" "}
-          LIVE
-        </div>
+        ></div>
       </div>
       {/* Now Serving row */}
       <div
@@ -970,32 +960,6 @@ export default function App() {
               <span style={{ fontSize: 11, color: "var(--blue-400)" }}>
                 · {currentUser.studentId}
               </span>
-            </div>
-            {/* Live System badge */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                background: "var(--blue-50)",
-                border: "1px solid var(--blue-100)",
-                borderRadius: 99,
-                padding: "5px 12px",
-                fontSize: 12,
-                color: "var(--blue-600)",
-                fontWeight: 500,
-              }}
-            >
-              <div
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  background: "var(--green-500)",
-                  animation: "pulse 2s infinite",
-                }}
-              />
-              Live System Active
             </div>
             {/* Log Out button */}
             <button
