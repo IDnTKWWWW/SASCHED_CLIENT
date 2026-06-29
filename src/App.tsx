@@ -1,5 +1,5 @@
-// @ts-nocheck
 import { useState, useEffect, useRef } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import StudentLogin from "./StudentLogin";
 import {
@@ -26,6 +26,51 @@ import {
   BellRing,
   LogOut,
 } from "lucide-react";
+
+// ─── TYPES ────────────────────────────────────────────────────────────────────
+interface AppTicket {
+  number: string;
+  date: string;
+  time: string;
+  name: string;
+  id: string;
+  course: string;
+  window: string;
+  venue: string;
+  issued: string;
+}
+
+interface CurrentUser {
+  name: string;
+  studentId: string;
+  course: string;
+}
+
+interface SelectedDate {
+  day: number;
+  month: number;
+  year: number;
+}
+
+interface SelectedSlot {
+  id: number;
+  time: string;
+  hour?: number;
+  minute?: number;
+  available?: number;
+  total?: number;
+}
+
+interface QueueItem {
+  ticket_number: string;
+  student_name: string;
+  appointment_time: string;
+  department: string;
+}
+
+type WindowStatus = "open" | "cutoff" | "closed";
+type BookingStep = "home" | "booking" | "confirm" | "ticket";
+type BookingMode = "now" | "later" | null;
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 const SCHOOL_NAME = "STI Calamba";
@@ -108,40 +153,40 @@ export default function App() {
   today.setHours(0, 0, 0, 0);
 
   // ── Auth State ───────────────────────────────────────────────
-  const [session, setSession] = useState(null);
-  const [authReady, setAuthReady] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState<boolean>(false);
 
   // ── Booking State ────────────────────────────────────────────
-  const [currentMonth, setCurrentMonth] = useState(today.getMonth());
-  const [currentYear, setCurrentYear] = useState(today.getFullYear());
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [selectedSlot, setSelectedSlot] = useState(null);
-  const [selectedWindow, setSelectedWindow] = useState(null);
-  const [bookingMode, setBookingMode] = useState(null);
-  const [step, setStep] = useState("home");
-  const [ticket, setTicket] = useState(null);
-  const [ticketVisible, setTicketVisible] = useState(false);
-  const [pulseQueue, setPulseQueue] = useState(false);
-  const [queuePosition, setQueuePosition] = useState(null);
-  const [isYourTurn, setIsYourTurn] = useState(false);
+  const [currentMonth, setCurrentMonth] = useState<number>(today.getMonth());
+  const [currentYear, setCurrentYear] = useState<number>(today.getFullYear());
+  const [selectedDate, setSelectedDate] = useState<SelectedDate | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<SelectedSlot | null>(null);
+  const [selectedWindow, setSelectedWindow] = useState<string | null>(null);
+  const [bookingMode, setBookingMode] = useState<BookingMode>(null);
+  const [step, setStep] = useState<BookingStep>("home");
+  const [ticket, setTicket] = useState<AppTicket | null>(null);
+  const [ticketVisible, setTicketVisible] = useState<boolean>(false);
+  const [pulseQueue, setPulseQueue] = useState<boolean>(false);
+  const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [isYourTurn, setIsYourTurn] = useState<boolean>(false);
 
   // ── 1-Ticket Policy State ────────────────────────────────────
-  const [hasActiveTicket, setHasActiveTicket] = useState(false);
+  const [hasActiveTicket, setHasActiveTicket] = useState<boolean>(false);
 
   // ── Window Status State (Admin Controls) ──────────────────────
-  const [cashierStatus, setCashierStatus] = useState("open");
-  const [registrarStatus, setRegistrarStatus] = useState("open");
+  const [cashierStatus, setCashierStatus] = useState<WindowStatus>("open");
+  const [registrarStatus, setRegistrarStatus] = useState<WindowStatus>("open");
 
   // ── Split "Now Serving" per department ──────────────────────
-  const [nowServingCashier, setNowServingCashier] = useState(null);
-  const [nowServingRegistrar, setNowServingRegistrar] = useState(null);
+  const [nowServingCashier, setNowServingCashier] = useState<string | null>(null);
+  const [nowServingRegistrar, setNowServingRegistrar] = useState<string | null>(null);
 
   // ── Split live queue per department ─────────────────────────
-  const [cashierQueue, setCashierQueue] = useState([]);
-  const [registrarQueue, setRegistrarQueue] = useState([]);
+  const [cashierQueue, setCashierQueue] = useState<QueueItem[]>([]);
+  const [registrarQueue, setRegistrarQueue] = useState<QueueItem[]>([]);
 
   // ── Total across both departments ───────────────────────────
-  const [liveQueueCount, setLiveQueueCount] = useState(null);
+  const [liveQueueCount, setLiveQueueCount] = useState<number | null>(null);
 
   // ── Auth Gatekeeper ──────────────────────────────────────────
   useEffect(() => {
@@ -268,7 +313,9 @@ export default function App() {
         .order("created_at", { ascending: true });
 
       if (error) {
-        console.error("Database fetch error:", error);
+        if (import.meta.env.DEV) {
+          console.warn("[DEV] Queue fetch error:", error);
+        }
       }
 
       if (waitingData) {
@@ -546,9 +593,18 @@ export default function App() {
     const windowLabel = windowObj?.label || "—";
     const department = windowObj?.dept || "Cashier";
 
-    // Generate smart ticket prefix
+    // Generate collision-resistant ticket: PREFIX-YYYYMMDD-XXXX
     const prefix = department === "Cashier" ? "C" : "R";
-    const num = prefix + "-" + String(Math.floor(Math.random() * 900) + 100);
+    const datePart = new Date()
+      .toISOString()
+      .slice(0, 10)
+      .replace(/-/g, "");
+    const hexPart = crypto
+      .randomUUID()
+      .replace(/-/g, "")
+      .slice(0, 4)
+      .toUpperCase();
+    const num = `${prefix}-${datePart}-${hexPart}`;
 
     // Save to Supabase
     const { error } = await supabase.from("queue_tickets").insert([
@@ -566,8 +622,10 @@ export default function App() {
     ]);
 
     if (error) {
-      console.error("Insert error:", error);
-      alert("Failed to connect to database.");
+      if (import.meta.env.DEV) {
+        console.warn("[DEV] Ticket insert error:", error);
+      }
+      alert("Failed to save your appointment. Please try again.");
       return;
     }
 
