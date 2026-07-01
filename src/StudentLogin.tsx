@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿﻿import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
 import {
   User,
@@ -18,7 +18,6 @@ interface StudentLoginProps {
 }
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const STI_EMAIL_DOMAIN = "@calamba.sti.edu.ph";
 const MAX_FAILED_ATTEMPTS = 5;
 const LOCKOUT_SECONDS = 30;
 
@@ -132,13 +131,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
       return;
     }
 
-    // 2. Domain validation
-    if (!signUpEmail.trim().toLowerCase().endsWith(STI_EMAIL_DOMAIN)) {
-      setError("You must use your official STI Calamba email.");
-      return;
-    }
-
-    // 3. Password length
+    // 2. Password length
     if (signUpPassword.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
@@ -997,7 +990,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
                   onChange={(e) => setSignUpEmail(e.target.value)}
                   onFocus={() => setFocused("signup-email")}
                   onBlur={() => setFocused(null)}
-                  placeholder="lastname.123456@calamba.sti.edu.ph"
+                  placeholder="you@example.com"
                   autoComplete="email"
                   required
                   style={{
@@ -1013,28 +1006,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
                   }}
                 />
               </div>
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 11,
-                  color: "var(--slate-400)",
-                  paddingLeft: 4,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                <div
-                  style={{
-                    width: 4,
-                    height: 4,
-                    borderRadius: "50%",
-                    background: "var(--green-500)",
-                    flexShrink: 0,
-                  }}
-                />
-                Must end with <strong>@calamba.sti.edu.ph</strong>
-              </div>
+
             </div>
 
             {/* Password */}

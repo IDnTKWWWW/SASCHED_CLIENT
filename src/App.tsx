@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+﻿﻿﻿﻿﻿﻿import { useState, useEffect, useRef } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import StudentLogin from "./StudentLogin";
@@ -9,13 +9,10 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Bell,
   BookOpen,
   Ticket,
   ArrowRight,
   MapPin,
-  GraduationCap,
-  X,
   Download,
   Share2,
   AlertCircle,
@@ -34,7 +31,7 @@ interface AppTicket {
   time: string;
   name: string;
   id: string;
-  course: string;
+  service_type: string;
   window: string;
   venue: string;
   issued: string;
@@ -42,9 +39,15 @@ interface AppTicket {
 
 interface CurrentUser {
   name: string;
-  studentId: string;
-  course: string;
+  accountId: string;
+  email: string;
 }
+
+type PurposeOfVisit =
+  | "General"
+  | "Premium Support"
+  | "Consultation"
+  | "Billing";
 
 interface SelectedDate {
   day: number;
@@ -63,7 +66,7 @@ interface SelectedSlot {
 
 interface QueueItem {
   ticket_number: string;
-  student_name: string;
+  user_name: string;
   appointment_time: string;
   department: string;
 }
@@ -95,7 +98,7 @@ const WINDOWS = [
 ];
 
 // ─── TIME SLOTS ───────────────────────────────────────────────────────────────
-const buildTimeSlots = (isToday) => {
+const buildTimeSlots = (isToday: boolean) => {
   const now = new Date();
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
@@ -140,10 +143,10 @@ const MONTHS = [
 ];
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function getDaysInMonth(year, month) {
+function getDaysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
-function getFirstDayOfMonth(year, month) {
+function getFirstDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 1).getDay();
 }
 
@@ -172,6 +175,10 @@ export default function App() {
 
   // ── 1-Ticket Policy State ────────────────────────────────────
   const [hasActiveTicket, setHasActiveTicket] = useState<boolean>(false);
+
+  // ── Purpose of Visit (per-booking selection) ──────────────────────────────
+  const [purposeOfVisit, setPurposeOfVisit] =
+    useState<PurposeOfVisit>("General");
 
   // ── Window Status State (Admin Controls) ──────────────────────
   const [cashierStatus, setCashierStatus] = useState<WindowStatus>("open");
@@ -210,30 +217,16 @@ export default function App() {
   };
 
   // ── Derive user identity from session ───────────────────────
-  const userEmail = session?.user?.email || "";
-  let extractedName = "STI Student";
-  let extractedId = "";
+  // Use immutable session.user.id (UUID) as the canonical accountId —
+  // never parse identity from the email string (anti-spoofing).
+  const displayName: string =
+    ((session?.user?.user_metadata?.display_name as string | undefined) ?? "")
+      .trim() || "SASCHED User";
 
-  if (userEmail) {
-    const localPart = userEmail.split("@")[0];
-    const nameParts = localPart.split(".");
-
-    if (nameParts.length >= 2) {
-      const rawName = nameParts[0];
-      extractedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-      extractedId = nameParts[1];
-    } else {
-      extractedName = localPart;
-      extractedId = "Unknown";
-    }
-  }
-
-  const finalName = session?.user?.user_metadata?.display_name || extractedName;
-
-  const currentUser = {
-    name: finalName,
-    studentId: extractedId,
-    course: "BSIT",
+  const currentUser: CurrentUser = {
+    name: displayName,
+    accountId: session?.user?.id ?? "",
+    email: session?.user?.email ?? "",
   };
 
   // ── Pulse animation ─────────────────────────────────────────
@@ -260,7 +253,7 @@ export default function App() {
       const { data: myTicketData } = await supabase
         .from("queue_tickets")
         .select("*")
-        .eq("student_id", currentUser.studentId)
+        .eq("account_id", currentUser.accountId)
         .in("status", ["waiting", "serving"])
         .single();
 
@@ -270,9 +263,9 @@ export default function App() {
           number: myTicketData.ticket_number,
           date: "Today",
           time: myTicketData.appointment_time,
-          name: myTicketData.student_name,
-          id: myTicketData.student_id,
-          course: myTicketData.course,
+          name: myTicketData.user_name,
+          id: myTicketData.account_id,
+          service_type: myTicketData.service_type,
           window: myTicketData.destination_window,
           venue: VENUE,
           issued: new Date(myTicketData.created_at).toLocaleString(),
@@ -306,7 +299,7 @@ export default function App() {
         error,
       } = await supabase
         .from("queue_tickets")
-        .select("ticket_number, student_name, appointment_time, department", {
+        .select("ticket_number, user_name, appointment_time, department", {
           count: "exact",
         })
         .eq("status", "waiting")
@@ -361,7 +354,7 @@ export default function App() {
 
           const item = {
             ticket_number: row.ticket_number,
-            student_name: row.student_name,
+            user_name: row.user_name,
             appointment_time: row.appointment_time,
             department: row.department,
           };
@@ -444,15 +437,15 @@ export default function App() {
           // Recalculate position if still waiting
           if (ticketRef.current && row.status === "serving") {
             const fetchPosition = async () => {
-              const { data, err } = await supabase
+              const { data, error: posErr } = await supabase
                 .from("queue_tickets")
                 .select("ticket_number")
                 .eq("status", "waiting")
                 .order("created_at", { ascending: true });
 
-              if (!err && data) {
+              if (!posErr && data && ticketRef.current) {
                 const myIndex = data.findIndex(
-                  (r) => r.ticket_number === ticketRef.current.number
+                  (r) => r.ticket_number === ticketRef.current!.number
                 );
                 if (myIndex !== -1) setQueuePosition(myIndex + 1);
               }
@@ -478,10 +471,10 @@ export default function App() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, currentUser.studentId]);
+  }, [session, currentUser.accountId]);
 
   // ── Notice Board Independent Card Theming Factory ───────────
-  const getNoticeForWindow = (windowName, status) => {
+  const getNoticeForWindow = (windowName: string, status: WindowStatus) => {
     if (status === "closed") {
       return {
         bg: "linear-gradient(135deg, #fef2f2, #fee2e2)",
@@ -518,19 +511,19 @@ export default function App() {
   // ── Date helpers ─────────────────────────────────────────────
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);
   const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
-  const isPast = (day) => new Date(currentYear, currentMonth, day) < today;
-  const isBeyondWindow = (day) => {
+  const isPast = (day: number) => new Date(currentYear, currentMonth, day) < today;
+  const isBeyondWindow = (day: number) => {
     const cutoff = new Date(today);
     cutoff.setDate(cutoff.getDate() + BOOKING_WINDOW_DAYS);
     return new Date(currentYear, currentMonth, day) > cutoff;
   };
-  const isWeekend = (day) =>
+  const isWeekend = (day: number) =>
     new Date(currentYear, currentMonth, day).getDay() === 0;
-  const isToday = (day) =>
+  const isToday = (day: number) =>
     day === today.getDate() &&
     currentMonth === today.getMonth() &&
     currentYear === today.getFullYear();
-  const isDisabled = (day) =>
+  const isDisabled = (day: number) =>
     isPast(day) || isBeyondWindow(day) || isWeekend(day);
 
   const cutoffDate = new Date(today);
@@ -594,7 +587,8 @@ export default function App() {
     const department = windowObj?.dept || "Cashier";
 
     // Generate collision-resistant ticket: PREFIX-YYYYMMDD-XXXX
-    const prefix = department === "Cashier" ? "C" : "R";
+    // Prefix is the first letter of the department — dynamic for any future window.
+    const prefix = department.charAt(0).toUpperCase();
     const datePart = new Date()
       .toISOString()
       .slice(0, 10)
@@ -610,12 +604,12 @@ export default function App() {
     const { error } = await supabase.from("queue_tickets").insert([
       {
         ticket_number: num,
-        student_name: currentUser.name,
-        student_id: currentUser.studentId,
-        course: currentUser.course,
+        user_name: currentUser.name,
+        account_id: currentUser.accountId,
+        service_type: purposeOfVisit,
         destination_window: windowLabel,
         department: department,
-        appointment_time: selectedSlot.time,
+        appointment_time: selectedSlot!.time,
         status: "waiting",
         booking_type: "booked",
       },
@@ -632,13 +626,13 @@ export default function App() {
     setHasActiveTicket(true);
     setTicket({
       number: num,
-      date: `${MONTHS[selectedDate.month]} ${selectedDate.day}, ${
-        selectedDate.year
+      date: `${MONTHS[selectedDate!.month]} ${selectedDate!.day}, ${
+        selectedDate!.year
       }`,
-      time: selectedSlot.time,
+      time: selectedSlot!.time,
       name: currentUser.name,
-      id: currentUser.studentId,
-      course: currentUser.course,
+      id: currentUser.accountId,
+      service_type: purposeOfVisit,
       window: windowLabel,
       venue: VENUE,
       issued: new Date().toLocaleString(),
@@ -654,6 +648,7 @@ export default function App() {
     setSelectedWindow(null);
     setBookingMode(null);
     setTicketVisible(false);
+    setPurposeOfVisit("General");
   };
 
   // ── Reusable queue column ─────────────────────────────────────
@@ -663,6 +658,12 @@ export default function App() {
     accentColor,
     nowServingTicket,
     queue,
+  }: {
+    title: string;
+    icon: React.ReactNode;
+    accentColor: string;
+    nowServingTicket: string | null;
+    queue: QueueItem[];
   }) => (
     <div
       className="card-shadow"
@@ -783,7 +784,7 @@ export default function App() {
             No students waiting.
           </div>
         ) : (
-          queue.map((q, i) => (
+          queue.map((q: QueueItem, i: number) => (
             <div
               key={q.ticket_number}
               className="queue-item"
@@ -814,7 +815,7 @@ export default function App() {
                     color: "var(--slate-700)",
                   }}
                 >
-                  {q.student_name}
+                  {q.user_name}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--slate-400)" }}>
                   {q.appointment_time}
@@ -1016,7 +1017,7 @@ export default function App() {
                 {currentUser.name}
               </span>
               <span style={{ fontSize: 11, color: "var(--blue-400)" }}>
-                · {currentUser.studentId}
+                · {currentUser.email}
               </span>
             </div>
             {/* Log Out button */}
@@ -2808,7 +2809,7 @@ export default function App() {
                     >
                       {currentUser.name
                         .split(" ")
-                        .map((n) => n[0])
+                        .map((n: string) => n[0])
                         .join("")
                         .slice(0, 2)}
                     </span>
@@ -2831,7 +2832,7 @@ export default function App() {
                         marginTop: 2,
                       }}
                     >
-                      {currentUser.course}
+                      {purposeOfVisit}
                     </div>
                   </div>
                   <div
@@ -2859,8 +2860,8 @@ export default function App() {
                   }}
                 >
                   {[
-                    { label: "Student ID", value: currentUser.studentId },
-                    { label: "Program", value: currentUser.course },
+                    { label: "Account ID", value: currentUser.accountId },
+                    { label: "Email", value: currentUser.email },
                   ].map((f) => (
                     <div
                       key={f.label}
@@ -2912,7 +2913,77 @@ export default function App() {
                   account and cannot be changed here.
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 10 }}>
+
+              {/* Purpose of Visit — editable per booking */}
+              <div style={{ marginBottom: 20 }}>
+                <div
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 14,
+                    color: "var(--slate-700)",
+                    marginBottom: 4,
+                  }}
+                >
+                  Purpose of Visit
+                </div>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "var(--slate-400)",
+                    marginBottom: 12,
+                  }}
+                >
+                  Select the nature of your appointment
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 8,
+                  }}
+                >
+                  {(
+                    [
+                      "General",
+                      "Premium Support",
+                      "Consultation",
+                      "Billing",
+                    ] as PurposeOfVisit[]
+                  ).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => setPurposeOfVisit(opt)}
+                      style={{
+                        padding: "10px 14px",
+                        borderRadius: 11,
+                        border:
+                          purposeOfVisit === opt
+                            ? "2px solid var(--blue-500)"
+                            : "1.5px solid var(--slate-200)",
+                        background:
+                          purposeOfVisit === opt ? "var(--blue-50)" : "white",
+                        color:
+                          purposeOfVisit === opt
+                            ? "var(--blue-700)"
+                            : "var(--slate-600)",
+                        fontSize: 12,
+                        fontWeight: purposeOfVisit === opt ? 700 : 500,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        fontFamily: "'Outfit', sans-serif",
+                        boxShadow:
+                          purposeOfVisit === opt
+                            ? "0 0 0 3px rgba(59,130,246,0.12)"
+                            : "none",
+                        transition: "all 0.15s ease",
+                      }}
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              </div>              <div style={{ display: "flex", gap: 10 }}>
                 <button
                   onClick={() => setStep("booking")}
                   style={{
@@ -2982,9 +3053,9 @@ export default function App() {
                 {[
                   {
                     label: "Date",
-                    value: `${MONTHS[selectedDate.month]} ${
-                      selectedDate.day
-                    }, ${selectedDate.year}`,
+                    value: `${MONTHS[selectedDate!.month]} ${
+                      selectedDate!.day
+                    }, ${selectedDate!.year}`,
                     icon: CalendarDays,
                   },
                   { label: "Time", value: selectedSlot?.time, icon: Clock },
@@ -3256,10 +3327,10 @@ export default function App() {
                   >
                     {[
                       { label: "Name", value: ticket.name },
-                      { label: "Student ID", value: ticket.id, mono: true },
+                      { label: "Account ID", value: ticket.id, mono: true },
                       { label: "Date", value: ticket.date },
                       { label: "Time", value: ticket.time },
-                      { label: "Program", value: ticket.course },
+                      { label: "Purpose", value: ticket.service_type },
                       { label: "Window", value: ticket.window },
                     ].map((field) => (
                       <div key={field.label}>
