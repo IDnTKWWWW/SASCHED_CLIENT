@@ -1,4 +1,4 @@
-﻿﻿﻿﻿import { useState, useEffect, useRef } from "react";
+﻿﻿import { useState, useEffect, useRef } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import StudentLogin from "./StudentLogin";
@@ -554,8 +554,8 @@ export default function App() {
 
   const selectedIsToday = selectedDate
     ? isToday(selectedDate.day) &&
-      selectedDate.month === today.getMonth() &&
-      selectedDate.year === today.getFullYear()
+    selectedDate.month === today.getMonth() &&
+    selectedDate.year === today.getFullYear()
     : false;
 
   const timeSlots = buildTimeSlots(selectedIsToday);
@@ -565,8 +565,8 @@ export default function App() {
     selectedWindow === "cashier"
       ? cashierStatus
       : selectedWindow === "registrar"
-      ? registrarStatus
-      : "open";
+        ? registrarStatus
+        : "open";
   const walkinDisabled =
     !selectedWindow ||
     activeWindowStatus === "cutoff" ||
@@ -626,9 +626,8 @@ export default function App() {
     setHasActiveTicket(true);
     setTicket({
       number: num,
-      date: `${MONTHS[selectedDate!.month]} ${selectedDate!.day}, ${
-        selectedDate!.year
-      }`,
+      date: `${MONTHS[selectedDate!.month]} ${selectedDate!.day}, ${selectedDate!.year
+        }`,
       time: selectedSlot!.time,
       name: currentUser.name,
       id: currentUser.accountId,
@@ -871,7 +870,7 @@ export default function App() {
 
   // ── Gate: show login if no session ──────────────────────────
   if (!session) {
-    return <StudentLogin onLoginSuccess={() => {}} />;
+    return <StudentLogin onLoginSuccess={() => { }} />;
   }
 
   // ── Authenticated App ────────────────────────────────────────
@@ -1084,8 +1083,8 @@ export default function App() {
                           background: isDone
                             ? "var(--blue-600)"
                             : isActive
-                            ? "var(--blue-600)"
-                            : "var(--slate-200)",
+                              ? "var(--blue-600)"
+                              : "var(--slate-200)",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -1111,8 +1110,8 @@ export default function App() {
                           color: isActive
                             ? "var(--blue-700)"
                             : isDone
-                            ? "var(--slate-600)"
-                            : "var(--slate-400)",
+                              ? "var(--slate-600)"
+                              : "var(--slate-400)",
                         }}
                       >
                         {labels[i]}
@@ -1890,8 +1889,8 @@ export default function App() {
                               month: currentMonth,
                               year: currentYear,
                             }),
-                            setSelectedSlot(null),
-                            setBookingMode(null))
+                              setSelectedSlot(null),
+                              setBookingMode(null))
                           }
                           style={{
                             aspectRatio: "1",
@@ -1904,15 +1903,15 @@ export default function App() {
                             background: isSel
                               ? "var(--blue-600)"
                               : isTod && !isSel
-                              ? "var(--blue-50)"
-                              : "transparent",
+                                ? "var(--blue-50)"
+                                : "transparent",
                             color: isSel
                               ? "white"
                               : disabled
-                              ? "var(--slate-300)"
-                              : isTod
-                              ? "var(--blue-700)"
-                              : "var(--slate-700)",
+                                ? "var(--slate-300)"
+                                : isTod
+                                  ? "var(--blue-700)"
+                                  : "var(--slate-700)",
                             border:
                               isTod && !isSel
                                 ? "1.5px solid var(--blue-300)"
@@ -2017,9 +2016,8 @@ export default function App() {
                   {!selectedDate
                     ? "Select a date first"
                     : selectedIsToday
-                    ? "Pick an option for today's appointment"
-                    : `Available times for ${MONTHS[selectedDate.month]} ${
-                        selectedDate.day
+                      ? "Pick an option for today's appointment"
+                      : `Available times for ${MONTHS[selectedDate.month]} ${selectedDate.day
                       }`}
                 </div>
 
@@ -2133,8 +2131,8 @@ export default function App() {
                               {!selectedWindow
                                 ? "Select a window first"
                                 : activeWindowStatus === "closed"
-                                ? "Window Closed Today"
-                                : "Cut-off Mode Active"}
+                                  ? "Window Closed Today"
+                                  : "Cut-off Mode Active"}
                             </div>
                           ) : (
                             <div
@@ -2362,14 +2360,14 @@ export default function App() {
                                         border: isSel
                                           ? "2px solid var(--blue-500)"
                                           : "1.5px solid " +
-                                            (full
-                                              ? "var(--slate-100)"
-                                              : "var(--slate-200)"),
+                                          (full
+                                            ? "var(--slate-100)"
+                                            : "var(--slate-200)"),
                                         background: isSel
                                           ? "var(--blue-50)"
                                           : full
-                                          ? "var(--slate-50)"
-                                          : "white",
+                                            ? "var(--slate-50)"
+                                            : "white",
                                         fontFamily: "'Outfit', sans-serif",
                                         boxShadow: isSel
                                           ? "0 0 0 3px rgba(59,130,246,0.15)"
@@ -2389,8 +2387,8 @@ export default function App() {
                                             isSel
                                               ? "var(--blue-600)"
                                               : full
-                                              ? "var(--slate-300)"
-                                              : "var(--slate-400)"
+                                                ? "var(--slate-300)"
+                                                : "var(--slate-400)"
                                           }
                                         />
                                         <span
@@ -2400,8 +2398,8 @@ export default function App() {
                                             color: isSel
                                               ? "var(--blue-700)"
                                               : full
-                                              ? "var(--slate-300)"
-                                              : "var(--slate-700)",
+                                                ? "var(--slate-300)"
+                                                : "var(--slate-700)",
                                           }}
                                         >
                                           {slot.time}
@@ -2432,8 +2430,8 @@ export default function App() {
                                                 pct > 0.8
                                                   ? "var(--red-400)"
                                                   : pct > 0.5
-                                                  ? "var(--amber-400)"
-                                                  : "var(--green-400)",
+                                                    ? "var(--amber-400)"
+                                                    : "var(--green-400)",
                                               transition: "width 0.3s ease",
                                             }}
                                           />
@@ -2567,14 +2565,14 @@ export default function App() {
                                         border: isSel
                                           ? "2px solid var(--blue-500)"
                                           : "1.5px solid " +
-                                            (full
-                                              ? "var(--slate-100)"
-                                              : "var(--slate-200)"),
+                                          (full
+                                            ? "var(--slate-100)"
+                                            : "var(--slate-200)"),
                                         background: isSel
                                           ? "var(--blue-50)"
                                           : full
-                                          ? "var(--slate-50)"
-                                          : "white",
+                                            ? "var(--slate-50)"
+                                            : "white",
                                         fontFamily: "'Outfit', sans-serif",
                                         boxShadow: isSel
                                           ? "0 0 0 3px rgba(59,130,246,0.15)"
@@ -2594,8 +2592,8 @@ export default function App() {
                                             isSel
                                               ? "var(--blue-600)"
                                               : full
-                                              ? "var(--slate-300)"
-                                              : "var(--slate-400)"
+                                                ? "var(--slate-300)"
+                                                : "var(--slate-400)"
                                           }
                                         />
                                         <span
@@ -2605,8 +2603,8 @@ export default function App() {
                                             color: isSel
                                               ? "var(--blue-700)"
                                               : full
-                                              ? "var(--slate-300)"
-                                              : "var(--slate-700)",
+                                                ? "var(--slate-300)"
+                                                : "var(--slate-700)",
                                           }}
                                         >
                                           {slot.time}
@@ -2637,8 +2635,8 @@ export default function App() {
                                                 pct > 0.8
                                                   ? "var(--red-400)"
                                                   : pct > 0.5
-                                                  ? "var(--amber-400)"
-                                                  : "var(--green-400)",
+                                                    ? "var(--amber-400)"
+                                                    : "var(--green-400)",
                                               transition: "width 0.3s ease",
                                             }}
                                           />
@@ -3053,9 +3051,8 @@ export default function App() {
                 {[
                   {
                     label: "Date",
-                    value: `${MONTHS[selectedDate!.month]} ${
-                      selectedDate!.day
-                    }, ${selectedDate!.year}`,
+                    value: `${MONTHS[selectedDate!.month]} ${selectedDate!.day
+                      }, ${selectedDate!.year}`,
                     icon: CalendarDays,
                   },
                   { label: "Time", value: selectedSlot?.time, icon: Clock },
