@@ -1,7 +1,6 @@
 # SASCHED - Student Appointment System
 
-![SASCHED Banner](<img width="500" height="500" alt="logo" src="https://github.com/user-attachments/assets/89d80e4c-ff55-4876-a1a5-dc5c66d77503" />
-)
+<img src="https://github.com/user-attachments/assets/89d80e4c-ff55-4876-a1a5-dc5c66d77503" alt="SASCHED Banner" width="200" height="200" />
 
 A modern, real-time student queueing and appointment portal built to streamline student services for Cashier and Registrar transactions.
 
