@@ -1,4 +1,4 @@
-﻿﻿﻿﻿﻿﻿import { useState, useEffect, useRef } from "react";
+﻿﻿﻿﻿import { useState, useEffect, useRef } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import StudentLogin from "./StudentLogin";
@@ -76,7 +76,7 @@ type BookingStep = "home" | "booking" | "confirm" | "ticket";
 type BookingMode = "now" | "later" | null;
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const SCHOOL_NAME = "STI Calamba";
+const SCHOOL_NAME = "SASCHED Platform";
 const DEPT = "(SAS) Appointment system";
 const VENUE = "First Floor, Main Building";
 const BOOKING_WINDOW_DAYS = 14;
@@ -92,7 +92,7 @@ const WINDOWS = [
   {
     id: "registrar",
     label: "Registrar Window",
-    desc: "Enrollment, records & forms",
+    desc: "Appointments, records & forms",
     dept: "Registrar",
   },
 ];
@@ -781,7 +781,7 @@ export default function App() {
               textAlign: "center",
             }}
           >
-            No students waiting.
+            No users waiting.
           </div>
         ) : (
           queue.map((q: QueueItem, i: number) => (
@@ -961,7 +961,7 @@ export default function App() {
             {/* Custom Logo Image */}
             <img
               src="/logo.png"
-              alt="STI Logo"
+              alt="SASCHED Logo"
               style={{
                 width: 42,
                 height: 42,
@@ -994,7 +994,7 @@ export default function App() {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {/* Student ID badge */}
+            {/* Account ID badge */}
             <div
               style={{
                 display: "flex",
@@ -1207,7 +1207,7 @@ export default function App() {
                         letterSpacing: "0.04em",
                       }}
                     >
-                      <BookOpen size={11} /> ENROLLMENT PERIOD · AY 2025–2026
+                      <BookOpen size={11} /> APPOINTMENT PERIOD · 2025–2026
                     </div>
                     <h1
                       style={{
@@ -1238,7 +1238,7 @@ export default function App() {
                     >
                       {hasActiveTicket
                         ? "You already have an active ticket. Click below to view your digital ticket and see your real-time position."
-                        : "Reserve your enrollment appointment in minutes. Get a digital ticket and arrive at your exact time — no waiting."}
+                        : "Reserve your appointment in minutes. Get a digital ticket and arrive at your exact time — no waiting."}
                     </p>
                     <button
                       className="btn-primary"
@@ -1595,7 +1595,7 @@ export default function App() {
                         gap: 6,
                       }}
                     >
-                      <MapPin size={14} color="var(--blue-600)" /> Enrollment
+                      <MapPin size={14} color="var(--blue-600)" /> Appointment
                       Venue
                     </div>
                     <div
@@ -2889,7 +2889,7 @@ export default function App() {
                           fontWeight: 600,
                           color: "var(--slate-700)",
                           fontFamily:
-                            f.label === "Student ID"
+                            f.label === "Account ID"
                               ? "'Space Mono',monospace"
                               : "inherit",
                         }}
@@ -2909,7 +2909,7 @@ export default function App() {
                     gap: 5,
                   }}
                 >
-                  <Lock size={10} /> This information is tied to your student
+                  <Lock size={10} /> This information is tied to your account
                   account and cannot be changed here.
                 </div>
               </div>
@@ -3246,7 +3246,7 @@ export default function App() {
                           letterSpacing: "0.08em",
                         }}
                       >
-                        ENROLLMENT TICKET
+                        APPOINTMENT TICKET
                       </div>
                       <div
                         style={{
@@ -3515,7 +3515,7 @@ export default function App() {
           borderTop: "1px solid rgba(226,232,240,0.5)",
         }}
       >
-        © 2025 {SCHOOL_NAME} · Enrollment Queueing System · All rights reserved
+        © 2025 {SCHOOL_NAME} · Universal Appointment Scheduler · All rights reserved
       </div>
 
       {/* ── "IT'S YOUR TURN" FULL-SCREEN ALERT ─────────────────── */}
@@ -3573,7 +3573,7 @@ export default function App() {
                 marginBottom: 12,
               }}
             >
-              {SCHOOL_NAME.toUpperCase()} · ENROLLMENT QUEUE
+              {SCHOOL_NAME.toUpperCase()} · APPOINTMENT QUEUE
             </div>
             <div
               style={{

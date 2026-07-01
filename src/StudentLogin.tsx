@@ -1,4 +1,4 @@
-﻿﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient";
 import {
   User,
@@ -332,7 +332,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
         >
           <img
             src="/logo.png"
-            alt="STI Logo"
+            alt="SASCHED Logo"
             style={{
               display: "block",
               margin: "0 auto 16px auto",
@@ -351,9 +351,10 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
               color: "#1e293b",
               lineHeight: 1.1,
               marginBottom: 6,
+              transition: "color 0.3s ease",
             }}
           >
-            STI Calamba
+            SASCHED Platform
           </div>
           <div
             style={{
@@ -367,7 +368,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
               transition: "color 0.3s ease",
             }}
           >
-            SAS · {isSignUp ? "Create Account" : "Appointment System"}
+            {isSignUp ? "Create Account" : "Universal Appointment Scheduler"}
           </div>
           <div
             style={{
@@ -377,7 +378,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
               marginTop: 2,
             }}
           >
-            Student Portal
+            User Portal
           </div>
         </div>
 
@@ -554,7 +555,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
                   onChange={(e) => setLoginEmail(e.target.value)}
                   onFocus={() => setFocused("login-email")}
                   onBlur={() => setFocused(null)}
-                  placeholder="lebron.395692@calamba.sti.edu.ph"
+                  placeholder="yourname@gmail.com"
                   autoComplete="username"
                   required
                   disabled={isLockedOut}
@@ -930,7 +931,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
               </div>
             </div>
 
-            {/* STI Email */}
+            {/* Official Email */}
             <div style={{ marginBottom: 14 }}>
               <label
                 style={{
@@ -943,7 +944,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
                   marginBottom: 8,
                 }}
               >
-                STI Email
+                Official Email
               </label>
               <div
                 onClick={() =>
@@ -1266,7 +1267,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
               textTransform: "uppercase",
             }}
           >
-            STI Calamba SAS · Student Access Portal
+            SASCHED Platform · User Access Portal
           </div>
         </div>
       </div>
