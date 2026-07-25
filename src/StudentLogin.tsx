@@ -39,6 +39,9 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [lockoutTimer, setLockoutTimer] = useState(0);
   const lockoutRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // lockoutActive drives the interval — set to true once when locking out,
+  // prevents the useEffect from re-creating the interval on every tick (Bug 8 fix)
+  const [lockoutActive, setLockoutActive] = useState(false);
 
   // ── Sign-up state ─────────────────────────────────────────
   const [fullName, setFullName] = useState("");
@@ -46,6 +49,13 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
   const [signUpPassword, setSignUpPassword] = useState("");
   const [showSignUpPw, setShowSignUpPw] = useState(false);
   const [signUpSuccess, setSignUpSuccess] = useState(false);
+
+  // ── Forgot password state (Bug 6 fix) ─────────────────────
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
 
   // ── Mount animation ───────────────────────────────────────
   useEffect(() => {
@@ -60,20 +70,29 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
     setFocused(null);
   }, [isSignUp]);
 
-  // ── Lockout countdown tick ────────────────────────────────
+  // ── Lockout countdown tick (Bug 8 fix) ──────────────────────────────
+  // Only starts a SINGLE interval when lockoutActive flips to true.
+  // No longer depends on lockoutTimer, so it doesn't re-create on every second.
   useEffect(() => {
-    if (lockoutTimer <= 0) return;
+    if (!lockoutActive) return;
     lockoutRef.current = setInterval(() => {
       setLockoutTimer((t) => {
         if (t <= 1) {
           clearInterval(lockoutRef.current!);
+          lockoutRef.current = null;
+          setLockoutActive(false);
           return 0;
         }
         return t - 1;
       });
     }, 1000);
-    return () => clearInterval(lockoutRef.current!);
-  }, [lockoutTimer]);
+    return () => {
+      if (lockoutRef.current) {
+        clearInterval(lockoutRef.current);
+        lockoutRef.current = null;
+      }
+    };
+  }, [lockoutActive]);
 
   const isLockedOut = lockoutTimer > 0;
 
@@ -98,6 +117,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
 
       if (newAttempts >= MAX_FAILED_ATTEMPTS) {
         setLockoutTimer(LOCKOUT_SECONDS);
+        setLockoutActive(true); // Bug 8 fix: trigger interval exactly once
         setFailedAttempts(0);
         setError(
           `Too many failed attempts. Please wait ${LOCKOUT_SECONDS} seconds before trying again.`
@@ -131,7 +151,14 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
       return;
     }
 
-    // 2. Password length
+    // 2. Email format validation (Feature 5 fix)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(signUpEmail.trim())) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
+    // 3. Password length
     if (signUpPassword.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
@@ -165,6 +192,28 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
       setSignUpEmail("");
       setSignUpPassword("");
     }, 2600);
+  };
+
+  // ── Forgot password handler (Bug 6 fix) ──────────────────────────────
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setResetError(null);
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(resetEmail.trim())) {
+      setResetError("Please enter a valid email address.");
+      return;
+    }
+    setResetLoading(true);
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
+      resetEmail.trim().toLowerCase(),
+      { redirectTo: window.location.origin }
+    );
+    setResetLoading(false);
+    if (resetErr) {
+      setResetError(resetErr.message);
+      return;
+    }
+    setResetEmailSent(true);
   };
 
   // ── Derived ────────────────────────────────────────────────
@@ -680,35 +729,137 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
               </div>
             </div>
 
-            {/* Forgot password */}
+            {/* Forgot password — Bug 6 fix: inline reset flow */}
             <div
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
-                marginBottom: 28,
+                marginBottom: isForgotPassword ? 16 : 28,
                 animation: mounted ? "staggerUp 0.45s 0.33s both ease" : "none",
               }}
             >
               <button
                 type="button"
                 className="sl-forgot"
-                onClick={() => alert("Coming soon!")}
+                onClick={() => {
+                  setIsForgotPassword(!isForgotPassword);
+                  setResetEmail("");
+                  setResetEmailSent(false);
+                  setResetError(null);
+                }}
                 style={{
                   background: "none",
                   border: "none",
                   cursor: "pointer",
                   fontSize: 12,
                   fontWeight: 500,
-                  color: "var(--slate-500)",
+                  color: isForgotPassword ? "var(--blue-600)" : "var(--slate-500)",
                   padding: 0,
                   fontFamily: "'Outfit', sans-serif",
                   transition: "color 0.15s ease",
                   textDecoration: "none",
                 }}
               >
-                Forgot password?
+                {isForgotPassword ? "← Back to sign in" : "Forgot password?"}
               </button>
             </div>
+
+            {/* Inline Forgot Password form */}
+            {isForgotPassword && (
+              <form
+                onSubmit={handleResetPassword}
+                style={{
+                  background: "var(--slate-50)",
+                  border: "1.5px solid var(--slate-200)",
+                  borderRadius: 14,
+                  padding: "18px 16px",
+                  marginBottom: 20,
+                }}
+              >
+                {resetEmailSent ? (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "10px 0",
+                    }}
+                  >
+                    <CheckCircle2 size={20} color="var(--green-500)" style={{ flexShrink: 0 }} />
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--slate-800)", marginBottom: 2 }}>
+                        Reset email sent!
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--slate-500)" }}>
+                        Check your inbox at <strong>{resetEmail}</strong> for the reset link.
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 12, color: "var(--slate-600)", marginBottom: 12, lineHeight: 1.5 }}>
+                      Enter your account email and we'll send you a password reset link.
+                    </div>
+                    {resetError && (
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 6,
+                          alignItems: "center",
+                          background: "rgba(239,68,68,0.06)",
+                          border: "1px solid rgba(239,68,68,0.2)",
+                          borderRadius: 9,
+                          padding: "8px 11px",
+                          fontSize: 12,
+                          color: "#ef4444",
+                          fontWeight: 500,
+                          marginBottom: 10,
+                        }}
+                      >
+                        <AlertCircle size={13} style={{ flexShrink: 0 }} /> {resetError}
+                      </div>
+                    )}
+                    <input
+                      type="email"
+                      value={resetEmail}
+                      onChange={(e) => setResetEmail(e.target.value)}
+                      placeholder="your@email.com"
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: "1.5px solid var(--slate-200)",
+                        fontSize: 13,
+                        fontFamily: "'Outfit', sans-serif",
+                        background: "white",
+                        boxSizing: "border-box",
+                        marginBottom: 10,
+                        outline: "none",
+                      }}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!resetEmail.trim() || resetLoading}
+                      style={{
+                        width: "100%",
+                        padding: "10px",
+                        borderRadius: 10,
+                        border: "none",
+                        background: "var(--blue-600)",
+                        color: "white",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: !resetEmail.trim() || resetLoading ? "not-allowed" : "pointer",
+                        opacity: !resetEmail.trim() || resetLoading ? 0.6 : 1,
+                        fontFamily: "'Outfit', sans-serif",
+                      }}
+                    >
+                      {resetLoading ? "Sending…" : "Send Reset Link"}
+                    </button>
+                  </>
+                )}
+              </form>
+            )}
 
             {/* Sign In button */}
             <button

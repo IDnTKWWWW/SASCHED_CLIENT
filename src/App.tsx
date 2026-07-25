@@ -1,4 +1,4 @@
-﻿﻿import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import StudentLogin from "./StudentLogin";
@@ -150,6 +150,123 @@ function getFirstDayOfMonth(year: number, month: number): number {
   return new Date(year, month, 1).getDay();
 }
 
+// ─── STABLE TOP-LEVEL COMPONENTS (defined outside App to prevent remount flicker) ──
+function QueueColumn({
+  title,
+  icon,
+  accentColor,
+  nowServingTicket,
+  queue,
+  pulseQueue,
+}: {
+  title: string;
+  icon: React.ReactNode;
+  accentColor: string;
+  nowServingTicket: string | null;
+  queue: QueueItem[];
+  pulseQueue: boolean;
+}) {
+  return (
+    <div
+      className="card-shadow"
+      style={{
+        background: "white",
+        borderRadius: 16,
+        border: "1px solid rgba(226,232,240,0.6)",
+        overflow: "hidden",
+        flex: 1,
+      }}
+    >
+      <div
+        style={{
+          padding: "16px 20px 12px",
+          borderBottom: "1px solid var(--slate-100)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {icon}
+          <span style={{ fontWeight: 700, fontSize: 14, color: "var(--slate-700)" }}>
+            {title}
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: accentColor,
+              background: accentColor + "18",
+              border: `1px solid ${accentColor}30`,
+              borderRadius: 99,
+              padding: "2px 8px",
+            }}
+          >
+            {queue.length} waiting
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--green-600)", fontWeight: 600 }} />
+      </div>
+      {/* Now Serving row */}
+      <div style={{ padding: "10px 20px", background: accentColor + "08", borderBottom: "1px solid var(--slate-100)" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: accentColor, letterSpacing: "0.07em", marginBottom: 4 }}>
+          NOW SERVING
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div
+            className={pulseQueue && nowServingTicket ? "pulse-ring" : ""}
+            style={{
+              fontFamily: "'Space Mono', monospace",
+              fontSize: nowServingTicket ? 26 : 18,
+              fontWeight: 700,
+              color: nowServingTicket ? "var(--slate-800)" : "var(--slate-300)",
+              letterSpacing: "0.02em",
+            }}
+          >
+            {nowServingTicket ?? "---"}
+          </div>
+          {nowServingTicket && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: accentColor, background: accentColor + "18", border: `1px solid ${accentColor}30`, borderRadius: 99, padding: "3px 9px" }}>
+              AT WINDOW
+            </span>
+          )}
+          {!nowServingTicket && (
+            <span style={{ fontSize: 11, color: "var(--slate-400)" }}>Window is ready</span>
+          )}
+        </div>
+      </div>
+      {/* Queue rows */}
+      <div style={{ padding: "6px 0", maxHeight: 220, overflowY: "auto" }}>
+        {queue.length === 0 ? (
+          <div style={{ padding: "18px 20px", fontSize: 13, color: "var(--slate-400)", textAlign: "center" }}>
+            No users waiting.
+          </div>
+        ) : (
+          queue.map((q: QueueItem, i: number) => (
+            <div
+              key={q.ticket_number}
+              className="queue-item"
+              style={{ padding: "9px 20px", display: "flex", alignItems: "center", gap: 12, borderLeft: "3px solid transparent" }}
+            >
+              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, color: "var(--slate-400)", minWidth: 46 }}>
+                {q.ticket_number}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: "var(--slate-700)" }}>{q.user_name}</div>
+                <div style={{ fontSize: 11, color: "var(--slate-400)" }}>
+                  {/* Strip date prefix if present (future bookings store "YYYY-MM-DDThh:mm AM") */}
+                  {q.appointment_time?.includes("T") ? q.appointment_time.split("T")[1] : q.appointment_time}
+                </div>
+              </div>
+              <span style={{ fontSize: 11, color: "var(--slate-400)", fontWeight: 500 }}>#{i + 1}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function App() {
   const today = new Date();
@@ -172,6 +289,14 @@ export default function App() {
   const [pulseQueue, setPulseQueue] = useState<boolean>(false);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [isYourTurn, setIsYourTurn] = useState<boolean>(false);
+  // ── Session-ended in-app modal ───────────────────────────────────
+  const [sessionEndedStatus, setSessionEndedStatus] = useState<string | null>(null);
+  // ── Cancel appointment confirmation ──────────────────────────────
+  const [showCancelConfirm, setShowCancelConfirm] = useState<boolean>(false);
+  // ── Logout two-step confirmation ──────────────────────────────────
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState<boolean>(false);
+  // ── Share / clipboard copy feedback ──────────────────────────────
+  const [shareCopied, setShareCopied] = useState<boolean>(false);
 
   // ── 1-Ticket Policy State ────────────────────────────────────
   const [hasActiveTicket, setHasActiveTicket] = useState<boolean>(false);
@@ -194,6 +319,13 @@ export default function App() {
 
   // ── Total across both departments ───────────────────────────
   const [liveQueueCount, setLiveQueueCount] = useState<number | null>(null);
+
+  // ── Booking Submit State ─────────────────────────────────────
+  const [bookingLoading, setBookingLoading] = useState<boolean>(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+
+  // ── Cancel Loading State ─────────────────────────────────────
+  const [cancelLoading, setCancelLoading] = useState<boolean>(false);
 
   // ── Auth Gatekeeper ──────────────────────────────────────────
   useEffect(() => {
@@ -250,19 +382,33 @@ export default function App() {
       if (!session) return;
 
       // 1. Check for User's Active Ticket (One-Ticket Policy)
+      // Use maybeSingle() so zero-row results return null instead of throwing
       const { data: myTicketData } = await supabase
         .from("queue_tickets")
         .select("*")
         .eq("account_id", currentUser.accountId)
         .in("status", ["waiting", "serving"])
-        .single();
+        .maybeSingle();
 
       if (myTicketData) {
         setHasActiveTicket(true);
+        // Derive display date from appointment_time prefix if present
+        // Future bookings store appointment_time as "YYYY-MM-DDThh:mm AM"
+        const rawApptTime: string = myTicketData.appointment_time || "";
+        const hasFutureDate = rawApptTime.includes("T");
+        const displayDate = (() => {
+          if (hasFutureDate) {
+            const [yr, mo, dy] = rawApptTime.split("T")[0].split("-").map(Number);
+            return `${MONTHS[mo - 1]} ${dy}, ${yr}`;
+          }
+          return "Today";
+        })();
+        const displayTime = hasFutureDate ? rawApptTime.split("T")[1] : rawApptTime;
+
         setTicket({
           number: myTicketData.ticket_number,
-          date: "Today",
-          time: myTicketData.appointment_time,
+          date: displayDate,
+          time: displayTime,
           name: myTicketData.user_name,
           id: myTicketData.account_id,
           service_type: myTicketData.service_type,
@@ -422,11 +568,9 @@ export default function App() {
             if (row.status === "serving") {
               setIsYourTurn(true);
               setQueuePosition(0);
-            } else if (["served", "noshow", "removed"].includes(row.status)) {
-              // Session concluded
-              alert(
-                `Your session has concluded (Status: ${row.status.toUpperCase()}).`
-              );
+            } else if (["served", "noshow", "removed", "cancelled"].includes(row.status)) {
+              // Session concluded — show in-app modal instead of native alert
+              setSessionEndedStatus(row.status);
               setHasActiveTicket(false);
               setTicket(null);
               setIsYourTurn(false);
@@ -517,8 +661,11 @@ export default function App() {
     cutoff.setDate(cutoff.getDate() + BOOKING_WINDOW_DAYS);
     return new Date(currentYear, currentMonth, day) > cutoff;
   };
-  const isWeekend = (day: number) =>
-    new Date(currentYear, currentMonth, day).getDay() === 0;
+  // Bug fix: block BOTH Sunday (0) AND Saturday (6) — office is Mon–Fri only
+  const isWeekend = (day: number) => {
+    const dow = new Date(currentYear, currentMonth, day).getDay();
+    return dow === 0 || dow === 6;
+  };
   const isToday = (day: number) =>
     day === today.getDate() &&
     currentMonth === today.getMonth() &&
@@ -576,18 +723,20 @@ export default function App() {
   // ── Booking Operation ────────────────────────────────────────
   const handleBook = async () => {
     if (hasActiveTicket) {
-      alert(
+      setBookingError(
         "You already have an active appointment. Please complete or cancel it first."
       );
       return;
     }
+    if (bookingLoading) return;
+    setBookingError(null);
+    setBookingLoading(true);
 
     const windowObj = WINDOWS.find((w) => w.id === selectedWindow);
     const windowLabel = windowObj?.label || "—";
     const department = windowObj?.dept || "Cashier";
 
     // Generate collision-resistant ticket: PREFIX-YYYYMMDD-XXXX
-    // Prefix is the first letter of the department — dynamic for any future window.
     const prefix = department.charAt(0).toUpperCase();
     const datePart = new Date()
       .toISOString()
@@ -600,6 +749,17 @@ export default function App() {
       .toUpperCase();
     const num = `${prefix}-${datePart}-${hexPart}`;
 
+    // Encode the selected date into appointment_time for future bookings.
+    // Format: "YYYY-MM-DDThh:mm AM" — admin side detects the "T" to know it's future.
+    // Today's bookings stay as plain time strings ("9:00 AM") for backward compat.
+    const slotTime = selectedSlot!.time;
+    const datePrefix = `${selectedDate!.year}-${String(selectedDate!.month + 1).padStart(2, "0")}-${String(selectedDate!.day).padStart(2, "0")}`;
+    const isDateToday =
+      selectedDate!.day === today.getDate() &&
+      selectedDate!.month === today.getMonth() &&
+      selectedDate!.year === today.getFullYear();
+    const appointmentTimeValue = isDateToday ? slotTime : `${datePrefix}T${slotTime}`;
+
     // Save to Supabase
     const { error } = await supabase.from("queue_tickets").insert([
       {
@@ -609,26 +769,27 @@ export default function App() {
         service_type: purposeOfVisit,
         destination_window: windowLabel,
         department: department,
-        appointment_time: selectedSlot!.time,
+        appointment_time: appointmentTimeValue,
         status: "waiting",
         booking_type: "booked",
       },
     ]);
 
+    setBookingLoading(false);
+
     if (error) {
       if (import.meta.env.DEV) {
         console.warn("[DEV] Ticket insert error:", error);
       }
-      alert("Failed to save your appointment. Please try again.");
+      setBookingError(`Booking failed: ${error.message}`);
       return;
     }
 
     setHasActiveTicket(true);
     setTicket({
       number: num,
-      date: `${MONTHS[selectedDate!.month]} ${selectedDate!.day}, ${selectedDate!.year
-        }`,
-      time: selectedSlot!.time,
+      date: `${MONTHS[selectedDate!.month]} ${selectedDate!.day}, ${selectedDate!.year}`,
+      time: slotTime,
       name: currentUser.name,
       id: currentUser.accountId,
       service_type: purposeOfVisit,
@@ -638,6 +799,63 @@ export default function App() {
     });
     setStep("ticket");
     setTimeout(() => setTicketVisible(true), 100);
+  };
+
+
+  // ── Save ticket as print / PDF ────────────────────────────────────
+  const handleSave = () => {
+    window.print();
+  };
+
+  // ── Share ticket details (Web Share API → clipboard fallback) ────
+  const handleShare = async () => {
+    if (!ticket) return;
+    const text = [
+      `SASCHED Appointment Ticket`,
+      `Ticket #: ${ticket.number}`,
+      `Name: ${ticket.name}`,
+      `Date: ${ticket.date}`,
+      `Time: ${ticket.time}`,
+      `Window: ${ticket.window}`,
+      `Venue: ${ticket.venue}`,
+    ].join("\n");
+    if (typeof navigator.share === "function") {
+      try {
+        await navigator.share({ title: `SASCHED Ticket ${ticket.number}`, text });
+      } catch (_) {
+        /* user cancelled share dialog */
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(text);
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2200);
+      } catch (_) {
+        if (import.meta.env.DEV) console.warn("[DEV] Clipboard write failed");
+      }
+    }
+  };
+
+  // ── Cancel active ticket ─────────────────────────────────────────
+  const handleCancelTicket = async () => {
+    if (!ticket || cancelLoading) return;
+    setCancelLoading(true);
+    const { error } = await supabase
+      .from("queue_tickets")
+      // Use "removed" — not "cancelled" — so admin realtime handler picks it up
+      .update({ status: "removed" })
+      .eq("ticket_number", ticket.number);
+    setCancelLoading(false);
+    if (error) {
+      if (import.meta.env.DEV) console.warn("[DEV] Cancel ticket error:", error);
+      return;
+    }
+    setShowCancelConfirm(false);
+    setHasActiveTicket(false);
+    setTicket(null);
+    setIsYourTurn(false);
+    setStep("home");
+    setPurposeOfVisit("General");
   };
 
   const reset = () => {
@@ -650,191 +868,6 @@ export default function App() {
     setPurposeOfVisit("General");
   };
 
-  // ── Reusable queue column ─────────────────────────────────────
-  const QueueColumn = ({
-    title,
-    icon,
-    accentColor,
-    nowServingTicket,
-    queue,
-  }: {
-    title: string;
-    icon: React.ReactNode;
-    accentColor: string;
-    nowServingTicket: string | null;
-    queue: QueueItem[];
-  }) => (
-    <div
-      className="card-shadow"
-      style={{
-        background: "white",
-        borderRadius: 16,
-        border: "1px solid rgba(226,232,240,0.6)",
-        overflow: "hidden",
-        flex: 1,
-      }}
-    >
-      <div
-        style={{
-          padding: "16px 20px 12px",
-          borderBottom: "1px solid var(--slate-100)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {icon}
-          <span
-            style={{ fontWeight: 700, fontSize: 14, color: "var(--slate-700)" }}
-          >
-            {title}
-          </span>
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: accentColor,
-              background: accentColor + "18",
-              border: `1px solid ${accentColor}30`,
-              borderRadius: 99,
-              padding: "2px 8px",
-            }}
-          >
-            {queue.length} waiting
-          </span>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 5,
-            fontSize: 11,
-            color: "var(--green-600)",
-            fontWeight: 600,
-          }}
-        ></div>
-      </div>
-      {/* Now Serving row */}
-      <div
-        style={{
-          padding: "10px 20px",
-          background: accentColor + "08",
-          borderBottom: "1px solid var(--slate-100)",
-        }}
-      >
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: accentColor,
-            letterSpacing: "0.07em",
-            marginBottom: 4,
-          }}
-        >
-          NOW SERVING
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div
-            className={pulseQueue && nowServingTicket ? "pulse-ring" : ""}
-            style={{
-              fontFamily: "'Space Mono', monospace",
-              fontSize: nowServingTicket ? 26 : 18,
-              fontWeight: 700,
-              color: nowServingTicket ? "var(--slate-800)" : "var(--slate-300)",
-              letterSpacing: "0.02em",
-            }}
-          >
-            {nowServingTicket ?? "---"}
-          </div>
-          {nowServingTicket && (
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: accentColor,
-                background: accentColor + "18",
-                border: `1px solid ${accentColor}30`,
-                borderRadius: 99,
-                padding: "3px 9px",
-              }}
-            >
-              AT WINDOW
-            </span>
-          )}
-          {!nowServingTicket && (
-            <span style={{ fontSize: 11, color: "var(--slate-400)" }}>
-              Window is ready
-            </span>
-          )}
-        </div>
-      </div>
-      {/* Queue rows */}
-      <div style={{ padding: "6px 0", maxHeight: 220, overflowY: "auto" }}>
-        {queue.length === 0 ? (
-          <div
-            style={{
-              padding: "18px 20px",
-              fontSize: 13,
-              color: "var(--slate-400)",
-              textAlign: "center",
-            }}
-          >
-            No users waiting.
-          </div>
-        ) : (
-          queue.map((q: QueueItem, i: number) => (
-            <div
-              key={q.ticket_number}
-              className="queue-item"
-              style={{
-                padding: "9px 20px",
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                borderLeft: "3px solid transparent",
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "'Space Mono', monospace",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: "var(--slate-400)",
-                  minWidth: 46,
-                }}
-              >
-                {q.ticket_number}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 500,
-                    color: "var(--slate-700)",
-                  }}
-                >
-                  {q.user_name}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--slate-400)" }}>
-                  {q.appointment_time}
-                </div>
-              </div>
-              <span
-                style={{
-                  fontSize: 11,
-                  color: "var(--slate-400)",
-                  fontWeight: 500,
-                }}
-              >
-                #{i + 1}
-              </span>
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
 
   // ── Auth Loading Spinner ─────────────────────────────────────
   if (!authReady) {
@@ -932,6 +965,26 @@ export default function App() {
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--slate-300); border-radius: 99px; }
+
+        /* ── Responsive / Mobile ──────────────────────────────────── */
+        @media (max-width: 900px) {
+          .home-layout-grid { grid-template-columns: 1fr !important; }
+          .queue-split-grid { grid-template-columns: 1fr !important; }
+          .booking-cal-grid { grid-template-columns: 1fr !important; }
+          .confirm-layout-grid { grid-template-columns: 1fr !important; }
+        }
+        /* ── Print / Save ───────────────────────────────────────────── */
+        @media print {
+          header, footer, .no-print { display: none !important; }
+          body * { visibility: hidden !important; }
+          .ticket-print-area, .ticket-print-area * { visibility: visible !important; }
+          .ticket-print-area {
+            position: fixed !important; left: 0 !important; top: 0 !important;
+            width: 100% !important; display: flex !important;
+            justify-content: center !important; padding: 40px !important;
+            background: white !important;
+          }
+        }
       `}</style>
 
       {/* ── HEADER ──────────────────────────────────────────────── */}
@@ -1019,28 +1072,75 @@ export default function App() {
                 · {currentUser.email}
               </span>
             </div>
-            {/* Log Out button */}
-            <button
-              className="btn-logout"
-              onClick={handleLogout}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                background: "transparent",
-                border: "1px solid var(--slate-200)",
-                borderRadius: 99,
-                padding: "5px 12px",
-                fontSize: 12,
-                color: "var(--slate-500)",
-                fontWeight: 600,
-                cursor: "pointer",
-                fontFamily: "'Outfit', sans-serif",
-              }}
-            >
-              <LogOut size={13} strokeWidth={2} />
-              Log Out
-            </button>
+            {/* Log Out — two-step confirmation (Feature 3) */}
+            {showLogoutConfirm ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "var(--slate-600)",
+                    fontWeight: 500,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Log out?
+                </span>
+                <button
+                  onClick={handleLogout}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: 99,
+                    border: "none",
+                    background: "#ef4444",
+                    color: "white",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "'Outfit', sans-serif",
+                  }}
+                >
+                  Yes
+                </button>
+                <button
+                  onClick={() => setShowLogoutConfirm(false)}
+                  style={{
+                    padding: "5px 14px",
+                    borderRadius: 99,
+                    border: "1px solid var(--slate-200)",
+                    background: "white",
+                    color: "var(--slate-600)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "'Outfit', sans-serif",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                className="btn-logout"
+                onClick={() => setShowLogoutConfirm(true)}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: "transparent",
+                  border: "1px solid var(--slate-200)",
+                  borderRadius: 99,
+                  padding: "5px 12px",
+                  fontSize: 12,
+                  color: "var(--slate-500)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                <LogOut size={13} strokeWidth={2} />
+                Log Out
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -1479,6 +1579,7 @@ export default function App() {
 
             {/* Split queue + Notice */}
             <div
+              className="home-layout-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 340px",
@@ -1490,6 +1591,7 @@ export default function App() {
                 style={{ display: "flex", flexDirection: "column", gap: 14 }}
               >
                 <div
+                  className="queue-split-grid"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "1fr 1fr",
@@ -1502,6 +1604,7 @@ export default function App() {
                     accentColor="#2563eb"
                     nowServingTicket={nowServingCashier}
                     queue={cashierQueue}
+                    pulseQueue={pulseQueue}
                   />
                   <QueueColumn
                     title="Registrar Window"
@@ -1509,6 +1612,7 @@ export default function App() {
                     accentColor="#7c3aed"
                     nowServingTicket={nowServingRegistrar}
                     queue={registrarQueue}
+                    pulseQueue={pulseQueue}
                   />
                 </div>
               </div>
@@ -1741,6 +1845,7 @@ export default function App() {
 
             {/* Calendar + Slots */}
             <div
+              className="booking-cal-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "1fr 1fr",
@@ -2732,7 +2837,7 @@ export default function App() {
         {/* ════════════════════════════════════════════════════════ */}
         {step === "confirm" && (
           <div
-            className="slide-up"
+            className="slide-up confirm-layout-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 360px",
@@ -2981,49 +3086,27 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-              </div>              <div style={{ display: "flex", gap: 10 }}>
+              </div>              {/* Inline booking error */}
+              {bookingError && (
+                <div style={{ marginBottom: 10, padding: "10px 14px", background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 10, fontSize: 12, color: "#dc2626", fontWeight: 500 }}>
+                  ⚠ {bookingError}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10 }}>
                 <button
                   onClick={() => setStep("booking")}
-                  style={{
-                    flex: 1,
-                    padding: "12px",
-                    borderRadius: 11,
-                    border: "1.5px solid var(--slate-200)",
-                    background: "white",
-                    color: "var(--slate-600)",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    fontFamily: "'Outfit', sans-serif",
-                  }}
+                  disabled={bookingLoading}
+                  style={{ flex: 1, padding: "12px", borderRadius: 11, border: "1.5px solid var(--slate-200)", background: "white", color: "var(--slate-600)", fontSize: 14, fontWeight: 600, cursor: bookingLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "'Outfit', sans-serif", opacity: bookingLoading ? 0.5 : 1 }}
                 >
                   <ChevronLeft size={15} /> Back
                 </button>
                 <button
                   className="btn-primary"
                   onClick={handleBook}
-                  style={{
-                    flex: 2,
-                    padding: "12px",
-                    borderRadius: 11,
-                    border: "none",
-                    background: "var(--blue-600)",
-                    color: "white",
-                    fontSize: 14,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    fontFamily: "'Outfit', sans-serif",
-                  }}
+                  disabled={bookingLoading}
+                  style={{ flex: 2, padding: "12px", borderRadius: 11, border: "none", background: bookingLoading ? "var(--slate-400)" : "var(--blue-600)", color: "white", fontSize: 14, fontWeight: 700, cursor: bookingLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: "'Outfit', sans-serif" }}
                 >
-                  <Ticket size={15} /> Confirm & Get Ticket
+                  <Ticket size={15} /> {bookingLoading ? "Processing…" : "Confirm & Get Ticket"}
                 </button>
               </div>
             </div>
@@ -3136,7 +3219,7 @@ export default function App() {
                       fontFamily: "'Outfit', sans-serif",
                     }}
                   >
-                    ~#5
+                    {`~#${(liveQueueCount ?? 0) + 1}`}
                   </div>
                 </div>
               </div>
@@ -3200,7 +3283,7 @@ export default function App() {
 
             {(ticketVisible || hasActiveTicket) && (
               <div
-                className="ticket-appear ticket-shadow"
+                className="ticket-appear ticket-shadow ticket-print-area"
                 style={{
                   width: "100%",
                   maxWidth: 420,
@@ -3431,8 +3514,43 @@ export default function App() {
                   >
                     Issued: {ticket.issued}
                   </div>
-                  <div style={{ display: "flex", gap: 8 }}>
+                  {/* Cancel Appointment — Feature 1 */}
+                  <button
+                    className="no-print"
+                    onClick={() => setShowCancelConfirm(true)}
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      borderRadius: 10,
+                      border: "1.5px solid rgba(239,68,68,0.3)",
+                      background: "rgba(239,68,68,0.04)",
+                      color: "#ef4444",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      fontFamily: "'Outfit', sans-serif",
+                      marginBottom: 8,
+                      transition: "all 0.18s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(239,68,68,0.10)";
+                      e.currentTarget.style.borderColor = "rgba(239,68,68,0.5)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(239,68,68,0.04)";
+                      e.currentTarget.style.borderColor = "rgba(239,68,68,0.3)";
+                    }}
+                  >
+                    <AlertCircle size={13} /> Cancel Appointment
+                  </button>
+                  {/* Save / Share / Return — Bug 7 fix: wired onClick handlers */}
+                  <div className="no-print" style={{ display: "flex", gap: 8 }}>
                     <button
+                      onClick={handleSave}
                       style={{
                         flex: 1,
                         padding: "11px",
@@ -3453,13 +3571,14 @@ export default function App() {
                       <Download size={14} /> Save
                     </button>
                     <button
+                      onClick={handleShare}
                       style={{
                         flex: 1,
                         padding: "11px",
                         borderRadius: 10,
                         border: "1.5px solid var(--slate-200)",
-                        background: "white",
-                        color: "var(--slate-600)",
+                        background: shareCopied ? "var(--green-500)" : "white",
+                        color: shareCopied ? "white" : "var(--slate-600)",
                         fontSize: 12,
                         fontWeight: 600,
                         cursor: "pointer",
@@ -3468,9 +3587,11 @@ export default function App() {
                         justifyContent: "center",
                         gap: 6,
                         fontFamily: "'Outfit', sans-serif",
+                        transition: "all 0.25s ease",
                       }}
                     >
-                      <Share2 size={14} /> Share
+                      <Share2 size={14} />
+                      {shareCopied ? "Copied!" : "Share"}
                     </button>
                     <button
                       className="btn-primary"
@@ -3643,6 +3764,213 @@ export default function App() {
             >
               ✓ Got it — I'm on my way
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── SESSION ENDED IN-APP MODAL (replaces native alert) ────── */}
+      {sessionEndedStatus && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9998,
+            background: "rgba(15,23,42,0.75)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(6px)",
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: 24,
+              padding: "40px 36px",
+              maxWidth: 400,
+              width: "90%",
+              textAlign: "center",
+              boxShadow: "0 24px 64px rgba(0,0,0,0.2)",
+            }}
+          >
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: "50%",
+                background: "var(--slate-100)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 20px",
+              }}
+            >
+              <CheckCircle2 size={32} color="var(--slate-400)" />
+            </div>
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: 22,
+                color: "var(--slate-800)",
+                letterSpacing: "-0.02em",
+                marginBottom: 8,
+                fontFamily: "'Outfit', sans-serif",
+              }}
+            >
+              Session Concluded
+            </div>
+            <div
+              style={{
+                fontSize: 14,
+                color: "var(--slate-500)",
+                lineHeight: 1.6,
+                marginBottom: 8,
+              }}
+            >
+              Your appointment session has ended.
+            </div>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "var(--slate-50)",
+                border: "1px solid var(--slate-200)",
+                borderRadius: 99,
+                padding: "5px 14px",
+                fontSize: 12,
+                fontWeight: 700,
+                color: "var(--slate-600)",
+                textTransform: "uppercase",
+                letterSpacing: "0.05em",
+                marginBottom: 28,
+              }}
+            >
+              Status: {sessionEndedStatus}
+            </div>
+            <button
+              onClick={() => setSessionEndedStatus(null)}
+              className="btn-primary"
+              style={{
+                width: "100%",
+                padding: "14px",
+                borderRadius: 13,
+                border: "none",
+                background: "var(--blue-600)",
+                color: "white",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: "pointer",
+                fontFamily: "'Outfit', sans-serif",
+              }}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── CANCEL APPOINTMENT CONFIRM MODAL ────────────────────── */}
+      {showCancelConfirm && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9997,
+            background: "rgba(15,23,42,0.6)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              borderRadius: 22,
+              padding: "36px 32px",
+              maxWidth: 380,
+              width: "90%",
+              textAlign: "center",
+              boxShadow: "0 24px 64px rgba(0,0,0,0.15)",
+            }}
+          >
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: "50%",
+                background: "rgba(239,68,68,0.08)",
+                border: "1.5px solid rgba(239,68,68,0.2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                margin: "0 auto 18px",
+              }}
+            >
+              <AlertCircle size={28} color="#ef4444" />
+            </div>
+            <div
+              style={{
+                fontWeight: 800,
+                fontSize: 20,
+                color: "var(--slate-800)",
+                marginBottom: 10,
+                fontFamily: "'Outfit', sans-serif",
+              }}
+            >
+              Cancel Appointment?
+            </div>
+            <div
+              style={{
+                fontSize: 13,
+                color: "var(--slate-500)",
+                lineHeight: 1.65,
+                marginBottom: 26,
+              }}
+            >
+              Are you sure you want to cancel ticket{" "}
+              <strong style={{ color: "var(--slate-700)" }}>
+                {ticket?.number}
+              </strong>
+              ? This action cannot be undone.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setShowCancelConfirm(false)}
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  borderRadius: 11,
+                  border: "1.5px solid var(--slate-200)",
+                  background: "white",
+                  color: "var(--slate-600)",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                Keep It
+              </button>
+              <button
+                onClick={handleCancelTicket}
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  borderRadius: 11,
+                  border: "none",
+                  background: "#ef4444",
+                  color: "white",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "'Outfit', sans-serif",
+                }}
+              >
+                Yes, Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
