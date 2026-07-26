@@ -22,6 +22,7 @@ import {
   CalendarClock,
   BellRing,
   LogOut,
+  X,
 } from "lucide-react";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
@@ -1314,6 +1315,50 @@ export default function App() {
                   </div>
                 );
               })}
+              {/* Exit / Cancel button — only shown on steps before "ticket" */}
+              {step !== "ticket" && (
+                <button
+                  onClick={() => {
+                    setStep("home");
+                    setSelectedWindow(null);
+                    setSelectedDate(null);
+                    setSelectedSlot(null);
+                    setPurposeOfVisit("General");
+                    setBookingError(null);
+                  }}
+                  title="Cancel booking"
+                  style={{
+                    marginLeft: 20,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "7px 14px",
+                    borderRadius: 9,
+                    border: "1px solid var(--slate-200)",
+                    background: "white",
+                    color: "var(--slate-500)",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    transition: "all 0.15s ease",
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = "#ef4444";
+                    e.currentTarget.style.color = "#ef4444";
+                    e.currentTarget.style.background = "#fff5f5";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "var(--slate-200)";
+                    e.currentTarget.style.color = "var(--slate-500)";
+                    e.currentTarget.style.background = "white";
+                  }}
+                >
+                  <X size={13} />
+                  Cancel
+                </button>
+              )}
             </div>
           </div>
         )}
