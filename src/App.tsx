@@ -98,25 +98,33 @@ const WINDOWS = [
 ];
 
 // ─── TIME SLOTS ───────────────────────────────────────────────────────────────
-const buildTimeSlots = (isToday: boolean) => {
+// Max bookings allowed per time slot per window
+const SLOT_CAPACITY = 5;
+
+const buildTimeSlots = (isToday: boolean, bookings: Record<string, number> = {}) => {
   const now = new Date();
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
 
   const allSlots = [
-    { id: 1, time: "8:00 AM", hour: 8, minute: 0, available: 3, total: 5 },
-    { id: 2, time: "8:30 AM", hour: 8, minute: 30, available: 0, total: 5 },
-    { id: 3, time: "9:00 AM", hour: 9, minute: 0, available: 2, total: 5 },
-    { id: 4, time: "9:30 AM", hour: 9, minute: 30, available: 5, total: 5 },
-    { id: 5, time: "10:00 AM", hour: 10, minute: 0, available: 1, total: 5 },
-    { id: 6, time: "10:30 AM", hour: 10, minute: 30, available: 4, total: 5 },
-    { id: 7, time: "11:00 AM", hour: 11, minute: 0, available: 0, total: 5 },
-    { id: 8, time: "1:00 PM", hour: 13, minute: 0, available: 5, total: 5 },
-    { id: 9, time: "1:30 PM", hour: 13, minute: 30, available: 3, total: 5 },
-    { id: 10, time: "2:00 PM", hour: 14, minute: 0, available: 2, total: 5 },
-    { id: 11, time: "2:30 PM", hour: 14, minute: 30, available: 4, total: 5 },
-    { id: 12, time: "3:00 PM", hour: 15, minute: 0, available: 1, total: 5 },
-  ];
+    { id: 1, time: "8:00 AM",  hour: 8,  minute: 0  },
+    { id: 2, time: "8:30 AM",  hour: 8,  minute: 30 },
+    { id: 3, time: "9:00 AM",  hour: 9,  minute: 0  },
+    { id: 4, time: "9:30 AM",  hour: 9,  minute: 30 },
+    { id: 5, time: "10:00 AM", hour: 10, minute: 0  },
+    { id: 6, time: "10:30 AM", hour: 10, minute: 30 },
+    { id: 7, time: "11:00 AM", hour: 11, minute: 0  },
+    { id: 8, time: "1:00 PM",  hour: 13, minute: 0  },
+    { id: 9, time: "1:30 PM",  hour: 13, minute: 30 },
+    { id: 10, time: "2:00 PM", hour: 14, minute: 0  },
+    { id: 11, time: "2:30 PM", hour: 14, minute: 30 },
+    { id: 12, time: "3:00 PM", hour: 15, minute: 0  },
+  ].map((slot) => ({
+    ...slot,
+    total: SLOT_CAPACITY,
+    // Live availability: CAPACITY minus booked count for this time slot
+    available: Math.max(0, SLOT_CAPACITY - (bookings[slot.time] ?? 0)),
+  }));
 
   if (!isToday) return allSlots;
 
@@ -326,6 +334,76 @@ export default function App() {
 
   // ── Cancel Loading State ─────────────────────────────────────
   const [cancelLoading, setCancelLoading] = useState<boolean>(false);
+
+  // ── Live Slot Availability ────────────────────────────────────
+  // Maps slot time (e.g. "9:00 AM") → number of existing booked tickets
+  const [slotBookings, setSlotBookings] = useState<Record<string, number>>({});
+  const [slotLoading, setSlotLoading] = useState<boolean>(false);
+
+  // Fetch real booking counts for the selected date+window from Supabase
+  const fetchSlotBookings = async (date: typeof selectedDate, windowId: string | null) => {
+    if (!date || !windowId) {
+      setSlotBookings({});
+      return;
+    }
+    setSlotLoading(true);
+    try {
+      const windowObj = WINDOWS.find((w) => w.id === windowId);
+      const windowLabel = windowObj?.label || "";
+
+      // Build the date prefix "YYYY-MM-DD" to match appointment_time format
+      const datePrefix = `${date.year}-${String(date.month + 1).padStart(2, "0")}-${String(date.day).padStart(2, "0")}`;
+      const isDateToday =
+        date.day === new Date().getDate() &&
+        date.month === new Date().getMonth() &&
+        date.year === new Date().getFullYear();
+
+      let query = supabase
+        .from("queue_tickets")
+        .select("appointment_time")
+        .in("status", ["waiting", "serving"])
+        .eq("destination_window", windowLabel);
+
+      if (isDateToday) {
+        // Today: appointment_time is plain "9:00 AM" (no T prefix)
+        // We need to exclude future-dated rows (which contain "T")
+        // Simple approach: fetch all today's non-T rows
+        const { data } = await query;
+        const counts: Record<string, number> = {};
+        (data || []).forEach((row: Record<string, string>) => {
+          const t = row.appointment_time || "";
+          if (!t.includes("T")) {
+            counts[t] = (counts[t] ?? 0) + 1;
+          }
+        });
+        setSlotBookings(counts);
+      } else {
+        // Future date: appointment_time is "YYYY-MM-DDThh:mm AM"
+        // Filter by rows that start with this date prefix
+        const { data } = await query;
+        const counts: Record<string, number> = {};
+        (data || []).forEach((row: Record<string, string>) => {
+          const t = row.appointment_time || "";
+          if (t.startsWith(datePrefix + "T")) {
+            const timeOnly = t.split("T")[1]; // e.g. "9:00 AM"
+            counts[timeOnly] = (counts[timeOnly] ?? 0) + 1;
+          }
+        });
+        setSlotBookings(counts);
+      }
+    } catch (e) {
+      if (import.meta.env.DEV) console.warn("[DEV] fetchSlotBookings error:", e);
+      setSlotBookings({});
+    } finally {
+      setSlotLoading(false);
+    }
+  };
+
+  // Re-fetch slot availability whenever date or window changes
+  useEffect(() => {
+    fetchSlotBookings(selectedDate, selectedWindow);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, selectedWindow]);
 
   // ── Auth Gatekeeper ──────────────────────────────────────────
   useEffect(() => {
@@ -705,7 +783,7 @@ export default function App() {
     selectedDate.year === today.getFullYear()
     : false;
 
-  const timeSlots = buildTimeSlots(selectedIsToday);
+  const timeSlots = buildTimeSlots(selectedIsToday, slotBookings);
 
   // ── Live Lockout Logic Gateway ───────────────────────────────
   const activeWindowStatus =
@@ -799,6 +877,8 @@ export default function App() {
     });
     setStep("ticket");
     setTimeout(() => setTicketVisible(true), 100);
+    // Refresh slot counts so the counts stay accurate for others browsing
+    fetchSlotBookings(selectedDate, selectedWindow);
   };
 
 
@@ -2374,7 +2454,11 @@ export default function App() {
                     >
                       <ChevronLeft size={14} /> Back to options
                     </button>
-                    {timeSlots.length === 0 ? (
+                    {slotLoading ? (
+                      <div style={{ padding: "20px", textAlign: "center", color: "var(--slate-400)", fontSize: 13 }}>
+                        Loading available slots…
+                      </div>
+                    ) : timeSlots.length === 0 ? (
                       <div
                         style={{
                           textAlign: "center",
