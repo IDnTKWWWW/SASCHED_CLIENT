@@ -238,7 +238,7 @@ export default function StudentLogin({ onLoginSuccess }: StudentLoginProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        backgroundImage: "url('/currentbg.png')",
+        backgroundImage: "url('/currentbg.jpg')",
         backgroundSize: "cover",
         backgroundPosition: "center",
         backgroundRepeat: "no-repeat",
