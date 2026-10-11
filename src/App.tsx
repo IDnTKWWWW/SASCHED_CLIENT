@@ -1152,15 +1152,45 @@ export default function App() {
     const windowLabel = windowObj?.label || "—";
     const department = windowObj?.dept || "Cashier";
 
-    // Generate collision-resistant ticket: PREFIX-YYYYMMDD-XXXX
+    // Generate short memorable ticket: PREFIX-XXX (e.g. C-001, C-002, R-001)
     const prefix = department.charAt(0).toUpperCase();
-    const datePart = getLocalTodayDateStr().replace(/-/g, "");
-    const hexPart = crypto
-      .randomUUID()
-      .replace(/-/g, "")
-      .slice(0, 4)
-      .toUpperCase();
-    const num = `${prefix}-${datePart}-${hexPart}`;
+    let num = `${prefix}-001`;
+    try {
+      const todayStr = getLocalTodayDateStr();
+      const { data: deptTickets } = await supabase
+        .from("queue_tickets")
+        .select("ticket_number, created_at, appointment_time")
+        .ilike("ticket_number", `${prefix}-%`)
+        .limit(1000);
+
+      const usedNumbers = new Set(deptTickets?.map((r) => r.ticket_number) || []);
+      let maxSeq = 0;
+      if (deptTickets) {
+        for (const row of deptTickets) {
+          const isTodayRow =
+            (row.created_at && row.created_at.startsWith(todayStr)) ||
+            (row.appointment_time && row.appointment_time.startsWith(todayStr));
+          if (isTodayRow) {
+            const match = row.ticket_number?.match(new RegExp(`^${prefix}-(\\d{3,4})$`));
+            if (match) {
+              const val = parseInt(match[1], 10);
+              if (val > maxSeq) maxSeq = val;
+            }
+          }
+        }
+      }
+
+      let candidateSeq = maxSeq + 1;
+      let candidate = `${prefix}-${String(candidateSeq).padStart(3, "0")}`;
+      while (usedNumbers.has(candidate)) {
+        candidateSeq++;
+        candidate = `${prefix}-${String(candidateSeq).padStart(3, "0")}`;
+      }
+      num = candidate;
+    } catch (_) {
+      const fallbackSeq = Math.floor(1 + Math.random() * 999);
+      num = `${prefix}-${String(fallbackSeq).padStart(3, "0")}`;
+    }
 
     // Encode the selected date into appointment_time for future bookings.
     // Format: "YYYY-MM-DDThh:mm AM" — admin side detects the "T" to know it's future.
@@ -1460,8 +1490,8 @@ export default function App() {
           width: 22px;
           height: 22px;
           border-radius: 50%;
-          background: #e2e8f0;
-          box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.12);
+          background: #e6eff8;
+          box-shadow: inset 0 2px 5px rgba(30, 58, 138, 0.15), inset 0 0 0 1px rgba(203, 213, 225, 0.5);
           z-index: 5;
         }
         .ticket-notch-l { left: -11px; }
@@ -4067,7 +4097,7 @@ export default function App() {
                   className="ticket-appear ticket-shadow ticket-print-area"
                   style={{
                     width: "100%",
-                    maxWidth: 420,
+                    maxWidth: 450,
                     background: "white",
                     borderRadius: 22,
                     overflow: "hidden",
@@ -4079,7 +4109,7 @@ export default function App() {
                         ticket.window?.toLowerCase().includes("registrar") || ticket.department === "Registrar"
                           ? "linear-gradient(135deg, #312e81 0%, #4338ca 55%, #6366f1 100%)"
                           : "linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 55%, #2563eb 100%)",
-                      padding: "24px 28px 22px",
+                      padding: "24px 26px 20px",
                       position: "relative",
                     }}
                   >
@@ -4094,95 +4124,113 @@ export default function App() {
                         background: "rgba(255,255,255,0.06)",
                       }}
                     />
+                    
+                    {/* Top subheader row */}
                     <div
                       style={{
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
+                        marginBottom: 14,
                       }}
                     >
-                      <div>
-                        <div
-                          style={{
-                            fontSize: 11,
-                            color: "rgba(255,255,255,0.75)",
-                            fontWeight: 700,
-                            letterSpacing: "0.08em",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                          }}
-                        >
-                          <Sparkle size={12} weight="fill" color="#fbbf24" />
-                          <span>OFFICIAL APPOINTMENT TICKET</span>
-                        </div>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            marginTop: 4,
-                          }}
-                        >
-                          <div
-                            style={{
-                              fontFamily: "'Space Mono', monospace",
-                              fontSize: 40,
-                              fontWeight: 700,
-                              color: "white",
-                              lineHeight: 1,
-                            }}
-                          >
-                            {ticket.number}
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyTicketNumber(ticket.number)}
-                            title="Copy ticket number"
-                            className="no-print"
-                            style={{
-                              background: ticketNumCopied ? "rgba(34,197,94,0.3)" : "rgba(255,255,255,0.18)",
-                              border: "1px solid rgba(255,255,255,0.25)",
-                              borderRadius: 8,
-                              padding: "4px 8px",
-                              color: "white",
-                              fontSize: 11,
-                              fontWeight: 600,
-                              cursor: "pointer",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              fontFamily: "'Outfit', sans-serif",
-                              transition: "all 0.18s ease",
-                            }}
-                          >
-                            {ticketNumCopied ? (
-                              <>
-                                <Check size={12} weight="bold" /> Copied
-                              </>
-                            ) : (
-                              <>
-                                <Copy size={12} /> Copy
-                              </>
-                            )}
-                          </button>
-                        </div>
+                      <div
+                        style={{
+                          fontSize: 10.5,
+                          color: "rgba(255,255,255,0.85)",
+                          fontWeight: 700,
+                          letterSpacing: "0.08em",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Sparkle size={12} weight="fill" color="#fbbf24" />
+                        <span>OFFICIAL APPOINTMENT TICKET</span>
                       </div>
                       <div
                         style={{
-                          background: "rgba(255,255,255,0.15)",
-                          borderRadius: 14,
-                          padding: "12px 16px",
-                          textAlign: "center",
+                          background: "rgba(255,255,255,0.16)",
+                          borderRadius: 99,
+                          padding: "4px 10px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          backdropFilter: "blur(6px)",
                         }}
                       >
-                        <Ticket size={28} color="white" weight="duotone" />
+                        <Ticket size={13} color="white" weight="duotone" />
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "white", letterSpacing: "0.05em" }}>
+                          {ticket.window?.includes("Registrar") || ticket.department === "Registrar" ? "REGISTRAR" : "CASHIER"}
+                        </span>
                       </div>
                     </div>
+
+                    {/* Hero Ticket Number & Copy Pill Row */}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        background: "rgba(0, 0, 0, 0.16)",
+                        padding: "10px 16px",
+                        borderRadius: 14,
+                        border: "1px solid rgba(255, 255, 255, 0.15)",
+                        backdropFilter: "blur(6px)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontFamily: "'Space Mono', monospace",
+                          fontSize: 34,
+                          fontWeight: 800,
+                          color: "white",
+                          lineHeight: 1,
+                          letterSpacing: "0.04em",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {ticket.number}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyTicketNumber(ticket.number)}
+                        title="Copy ticket number"
+                        className="no-print"
+                        style={{
+                          background: ticketNumCopied ? "rgba(34,197,94,0.35)" : "rgba(255,255,255,0.2)",
+                          border: "1px solid rgba(255,255,255,0.3)",
+                          borderRadius: 8,
+                          padding: "6px 12px",
+                          color: "white",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          fontFamily: "'Outfit', sans-serif",
+                          transition: "all 0.18s ease",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {ticketNumCopied ? (
+                          <>
+                            <Check size={12} weight="bold" /> Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={12} /> Copy
+                          </>
+                        )}
+                      </button>
+                    </div>
+
                     <div
                       style={{
                         fontSize: 11,
-                        color: "rgba(255,255,255,0.65)",
+                        color: "rgba(255,255,255,0.7)",
                         marginTop: 10,
                         fontWeight: 500,
                       }}
@@ -4190,30 +4238,31 @@ export default function App() {
                       {SCHOOL_NAME} · {DEPT}
                     </div>
                   </div>
+
                   {/* Tear line with authentic notches */}
                   <div className="ticket-perforation-divider">
                     <div className="ticket-notch-l" />
                     <div className="ticket-notch-r" />
                     <div className="ticket-perforation-line" />
                   </div>
-                  <div style={{ padding: "28px 28px 24px" }}>
+                  <div style={{ padding: "24px 26px 22px" }}>
                     <div
                       style={{
                         display: "grid",
                         gridTemplateColumns: "1fr 1fr",
-                        gap: 18,
-                        marginBottom: 20,
+                        gap: 16,
+                        marginBottom: 18,
                       }}
                     >
                       {[
                         { label: "Name", value: ticket.name },
-                        { label: "Account ID", value: ticket.id, mono: true },
+                        { label: "Account ID", value: ticket.id, mono: true, isId: true },
                         { label: "Date", value: ticket.date },
                         { label: "Time", value: ticket.time },
                         { label: "Purpose", value: ticket.service_type },
                         { label: "Window", value: ticket.window },
                       ].map((field) => (
-                        <div key={field.label}>
+                        <div key={field.label} style={{ minWidth: 0 }}>
                           <div
                             style={{
                               fontSize: 10,
@@ -4233,9 +4282,15 @@ export default function App() {
                               fontFamily: field.mono
                                 ? "'Space Mono', monospace"
                                 : "inherit",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
                             }}
+                            title={field.value}
                           >
-                            {field.value}
+                            {field.isId && field.value && field.value.length > 12
+                              ? `${field.value.slice(0, 8)}...${field.value.slice(-4)}`
+                              : field.value}
                           </div>
                         </div>
                       ))}
