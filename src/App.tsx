@@ -40,172 +40,40 @@ import {
   ShieldCheck,
   Eye,
 } from "@phosphor-icons/react";
+import "./index.css";
+import "./styles/app.css";
 import SettingsModal from "./settings/SettingsModal";
 import { useUserSettings } from "./settings/useUserSettings";
 import type { QueueDisplayMode, SettingsTab } from "./settings/types";
 import { formatQueueDisplayName } from "./utils/formatQueueDisplayName";
-
-// ─── TYPES ────────────────────────────────────────────────────────────────────
-interface AppTicket {
-  number: string;
-  date: string;
-  time: string;
-  name: string;
-  id: string;
-  service_type: string;
-  window: string;
-  venue: string;
-  issued: string;
-  appointment_time?: string;
-  department?: string;
-}
-
-interface CurrentUser {
-  name: string;
-  accountId: string;
-  email: string;
-}
-
-type PurposeOfVisit =
-  | "General"
-  | "Premium Support"
-  | "Consultation"
-  | "Billing";
-
-interface SelectedDate {
-  day: number;
-  month: number;
-  year: number;
-}
-
-interface SelectedSlot {
-  id: number;
-  time: string;
-  hour?: number;
-  minute?: number;
-  available?: number;
-  total?: number;
-}
-
-interface QueueItem {
-  ticket_number: string;
-  user_name: string;
-  public_display_name?: string | null;
-  account_id?: string | null;
-  appointment_time: string;
-  department: string;
-}
-
-type WindowStatus = "open" | "cutoff" | "closed";
-type BookingStep = "home" | "booking" | "confirm" | "ticket";
-type BookingMode = "now" | "later" | null;
-
-// ─── CONSTANTS ────────────────────────────────────────────────────────────────
-const SCHOOL_NAME = "SASCHED Platform";
-const DEPT = "(SAS) Appointment system";
-const VENUE = "First Floor, Main Building";
-const BOOKING_WINDOW_DAYS = 14;
-
-// ─── WINDOWS / DEPARTMENTS ────────────────────────────────────────────────────
-const WINDOWS = [
-  {
-    id: "cashier",
-    label: "Cashier Window",
-    desc: "Payments, fees & clearances",
-    dept: "Cashier",
-  },
-  {
-    id: "registrar",
-    label: "Registrar Window",
-    desc: "Appointments, records & forms",
-    dept: "Registrar",
-  },
-];
-
-// ─── TIME SLOTS ───────────────────────────────────────────────────────────────
-// Max bookings allowed per time slot per window
-const SLOT_CAPACITY = 5;
-
-const buildTimeSlots = (isToday: boolean, bookings: Record<string, number> = {}) => {
-  const now = new Date();
-  const currentHour = now.getHours();
-  const currentMinute = now.getMinutes();
-
-  const allSlots = [
-    { id: 1, time: "8:00 AM", hour: 8, minute: 0 },
-    { id: 2, time: "8:30 AM", hour: 8, minute: 30 },
-    { id: 3, time: "9:00 AM", hour: 9, minute: 0 },
-    { id: 4, time: "9:30 AM", hour: 9, minute: 30 },
-    { id: 5, time: "10:00 AM", hour: 10, minute: 0 },
-    { id: 6, time: "10:30 AM", hour: 10, minute: 30 },
-    { id: 7, time: "11:00 AM", hour: 11, minute: 0 },
-    { id: 8, time: "1:00 PM", hour: 13, minute: 0 },
-    { id: 9, time: "1:30 PM", hour: 13, minute: 30 },
-    { id: 10, time: "2:00 PM", hour: 14, minute: 0 },
-    { id: 11, time: "2:30 PM", hour: 14, minute: 30 },
-    { id: 12, time: "3:00 PM", hour: 15, minute: 0 },
-  ].map((slot) => ({
-    ...slot,
-    total: SLOT_CAPACITY,
-    // Live availability: CAPACITY minus booked count for this time slot
-    available: Math.max(0, SLOT_CAPACITY - (bookings[slot.time] ?? 0)),
-  }));
-
-  if (!isToday) return allSlots;
-
-  return allSlots.filter((slot) => {
-    const slotTotalMinutes = slot.hour * 60 + slot.minute;
-    const nowTotalMinutes = currentHour * 60 + currentMinute;
-    return slotTotalMinutes > nowTotalMinutes + 30;
-  });
-};
-
-const MONTHS = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-function getDaysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
-}
-function getFirstDayOfMonth(year: number, month: number): number {
-  return new Date(year, month, 1).getDay();
-}
-
-const getLocalTodayDateStr = (): string => {
-  const now = new Date();
-  const yr = now.getFullYear();
-  const mo = String(now.getMonth() + 1).padStart(2, "0");
-  const dy = String(now.getDate()).padStart(2, "0");
-  return `${yr}-${mo}-${dy}`;
-};
-
-function isTicketToday(t: AppTicket | null): boolean {
-  if (!t) return false;
-  if (t.date === "Today") return true;
-  const appt = t.appointment_time || "";
-  if (appt) {
-    if (!appt.includes("T")) return true;
-    const todayStr = getLocalTodayDateStr();
-    return appt.split("T")[0] <= todayStr;
-  }
-  if (t.date && t.date.includes(",")) {
-    const todayFormatted = `${MONTHS[new Date().getMonth()]} ${new Date().getDate()}, ${new Date().getFullYear()}`;
-    return t.date === todayFormatted;
-  }
-  return true;
-}
+import {
+  SCHOOL_NAME,
+  DEPT,
+  VENUE,
+  BOOKING_WINDOW_DAYS,
+  WINDOWS,
+  MONTHS,
+  DAYS,
+  HERO_WORDS,
+  type AppTicket,
+  type CurrentUser,
+  type PurposeOfVisit,
+  type SelectedDate,
+  type SelectedSlot,
+  type QueueItem,
+  type WindowStatus,
+  type BookingStep,
+  type BookingMode,
+} from "./types/booking";
+import {
+  buildTimeSlots,
+  getDaysInMonth,
+  getFirstDayOfMonth,
+  getLocalTodayDateStr,
+  isTicketToday,
+  getNoticeForWindow,
+} from "./utils/dateAndSlots";
+import { playTurnChime, notifyTurn } from "./utils/notifications";
 
 // ─── STABLE TOP-LEVEL COMPONENTS (defined outside App to prevent remount flicker) ──
 function QueueColumn({
@@ -363,8 +231,6 @@ function QueueColumn({
     </div>
   );
 }
-
-const HERO_WORDS = ["Slot", "Appointment", "Session", "Future"];
 
 // ─── COMPONENT ────────────────────────────────────────────────────────────────
 export default function App() {
@@ -546,41 +412,6 @@ export default function App() {
   const [slotBookings, setSlotBookings] = useState<Record<string, number>>({});
   const [slotLoading, setSlotLoading] = useState<boolean>(false);
 
-  // ── Audio Chime Synthesizer ─────────────────────────────────
-  // Shared module AudioContext singleton across window session
-  const sharedAudioCtxRef = useRef<AudioContext | null>(null);
-  const playTurnChime = () => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      if (!sharedAudioCtxRef.current || sharedAudioCtxRef.current.state === "closed") {
-        sharedAudioCtxRef.current = new AudioCtx();
-      }
-      if (sharedAudioCtxRef.current.state === "suspended") {
-        sharedAudioCtxRef.current.resume();
-      }
-      const ctx = sharedAudioCtxRef.current;
-      const now = ctx.currentTime;
-      // 3-tone ascending chime (C5 -> E5 -> G5)
-      const notes = [523.25, 659.25, 783.99];
-      notes.forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(freq, now + idx * 0.14);
-        gain.gain.setValueAtTime(0, now + idx * 0.14);
-        gain.gain.linearRampToValueAtTime(0.3, now + idx * 0.14 + 0.03);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.14 + 0.45);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now + idx * 0.14);
-        osc.stop(now + idx * 0.14 + 0.5);
-      });
-    } catch (e) {
-      if (import.meta.env.DEV) console.warn("[DEV] playTurnChime error:", e);
-    }
-  };
-
   const handleTestChime = () => {
     playTurnChime();
     setTestingChime(true);
@@ -596,20 +427,6 @@ export default function App() {
       showToast(`Ticket ${num} copied to clipboard`);
     } catch (_) {
       showToast(`Ticket: ${num}`);
-    }
-  };
-
-  // ── Web Push / Browser Notification ─────────────────────────
-  const notifyTurn = (ticketNum?: string, windowName?: string) => {
-    if ("Notification" in window && Notification.permission === "granted") {
-      try {
-        new Notification("It's Your Turn! — SASCHED", {
-          body: `Ticket ${ticketNum || "your ticket"} is being called at ${windowName || "the window"}. Please proceed immediately!`,
-          icon: "/logo.png",
-        });
-      } catch (e) {
-        if (import.meta.env.DEV) console.warn("[DEV] notifyTurn error:", e);
-      }
     }
   };
 
@@ -1184,41 +1001,6 @@ export default function App() {
     };
   }, [session, currentUser.accountId]);
 
-  // ── Notice Board Independent Card Theming Factory ───────────
-  const getNoticeForWindow = (windowName: string, status: WindowStatus) => {
-    if (status === "closed") {
-      return {
-        bg: "linear-gradient(135deg, #fef2f2, #fee2e2)",
-        border: "#fca5a5",
-        iconColor: "#dc2626",
-        titleColor: "#991b1b",
-        textColor: "#7f1d1d",
-        title: `${windowName} is Closed`,
-        text: "This window is currently closed for the day. Please check back later.",
-      };
-    } else if (status === "cutoff") {
-      return {
-        bg: "linear-gradient(135deg, #fffbeb, #fef3c7)",
-        border: "#fde68a",
-        iconColor: "#d97706",
-        titleColor: "#92400e",
-        textColor: "#78350f",
-        title: `${windowName} Cut-off Active`,
-        text: "We are nearing capacity. Only pre-booked slots are currently being accepted for this window.",
-      };
-    } else {
-      return {
-        bg: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
-        border: "#bbf7d0",
-        iconColor: "#16a34a",
-        titleColor: "#166534",
-        textColor: "#14532d",
-        title: `${windowName} is Open`,
-        text: "Standard operations are ongoing. Pre-book your slot or walk in to get a ticket.",
-      };
-    }
-  };
-
   // ── Date helpers ─────────────────────────────────────────────
   const daysInMonth = getDaysInMonth(currentYear, currentMonth);
   const firstDay = getFirstDayOfMonth(currentYear, currentMonth);
@@ -1588,173 +1370,6 @@ export default function App() {
             display: settings.reduceMotion ? "none" : "block",
           }}
         />
-        <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=Space+Mono:wght@400;700&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        :root {
-          --blue-50:#eff6ff; --blue-100:#dbeafe; --blue-200:#bfdbfe;
-          --blue-400:#60a5fa; --blue-500:#3b82f6; --blue-600:#2563eb;
-          --blue-700:#1d4ed8; --blue-800:#1e40af; --blue-900:#1e3a8a;
-          --slate-50:#f8fafc; --slate-100:#f1f5f9; --slate-200:#e2e8f0;
-          --slate-300:#cbd5e1; --slate-400:#94a3b8; --slate-500:#64748b;
-          --slate-600:#475569; --slate-700:#334155; --slate-800:#1e293b;
-          --slate-900:#0f172a;
-          --green-400:#4ade80; --green-500:#22c55e; --green-600:#16a34a;
-          --amber-400:#fbbf24; --amber-500:#f59e0b;
-          --red-400:#f87171; --red-500:#ef4444;
-        }
-        .fade-in { animation: fadeIn 0.4s ease forwards; }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);} }
-        .slide-up { animation: slideUp 0.5s cubic-bezier(.22,.68,0,1.2) forwards; }
-        @keyframes slideUp { from{opacity:0;transform:translateY(32px) scale(0.97);}to{opacity:1;transform:translateY(0) scale(1);} }
-        .ticket-appear { animation: ticketIn 0.6s cubic-bezier(.22,.68,0,1.2) forwards; }
-        @keyframes ticketIn { from{opacity:0;transform:scale(0.85) translateY(24px);}to{opacity:1;transform:scale(1) translateY(0);} }
-        .pulse-ring { animation: pulseRing 1.5s ease-out; }
-        @keyframes pulseRing { 0%{box-shadow:0 0 0 0 rgba(59,130,246,0.4);}100%{box-shadow:0 0 0 20px rgba(59,130,246,0);} }
-        .slot-btn { transition: all 0.18s ease; }
-        .slot-btn:hover:not(:disabled) { transform: translateY(-2px); }
-        .cal-day { transition: all 0.15s ease; cursor: pointer; }
-        .cal-day:hover { background: var(--blue-100) !important; }
-        .card-shadow { box-shadow: 0 4px 6px -1px rgba(15,23,42,0.03), 0 20px 35px -8px rgba(37,99,235,0.08), 0 0 0 1px rgba(226,232,240,0.85); }
-        .ticket-shadow { box-shadow: 0 4px 6px rgba(0,0,0,0.04), 0 20px 60px rgba(37,99,235,0.18); }
-        .btn-primary { transition: all 0.2s ease; }
-        .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 8px 24px rgba(37,99,235,0.3); }
-        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-        .queue-item { transition: all 0.3s ease; }
-        .queue-item:hover { background: var(--blue-50); }
-        .window-btn { transition: all 0.18s ease; cursor: pointer; }
-        .window-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(37,99,235,0.15); }
-        .mode-card { transition: all 0.2s ease; }
-        .mode-card:hover:not(:disabled) { transform: translateY(-3px); }
-        .your-turn-modal { animation: yourTurnIn 0.5s cubic-bezier(.22,.68,0,1.2) forwards; }
-        @keyframes yourTurnIn { from{opacity:0;transform:scale(0.92);}to{opacity:1;transform:scale(1);} }
-        .your-turn-pulse { animation: yourTurnPulse 1.4s ease-in-out infinite; }
-        @keyframes yourTurnPulse { 0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.85;transform:scale(1.03);} }
-        .bell-shake { animation: bellShake 0.8s ease-in-out infinite; }
-        @keyframes bellShake { 0%,100%{transform:rotate(0deg);}20%{transform:rotate(-18deg);}40%{transform:rotate(18deg);}60%{transform:rotate(-12deg);}80%{transform:rotate(12deg);} }
-        .btn-logout { transition: all 0.18s ease; }
-        .btn-logout:hover { background: rgba(239,68,68,0.08) !important; color: #ef4444 !important; border-color: rgba(239,68,68,0.25) !important; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--slate-300); border-radius: 99px; }
-
-        /* ── Dynamic Design Tokens ───────────────────────────────── */
-        .live-dot-pulse {
-          position: relative;
-          display: inline-block;
-          width: 8px;
-          height: 8px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6);
-          animation: liveDotPulse 1.8s ease-in-out infinite;
-        }
-        @keyframes liveDotPulse {
-          0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.6); }
-          70% { box-shadow: 0 0 0 7px rgba(34, 197, 94, 0); }
-          100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
-        }
-        .glass-badge {
-          background: rgba(255, 255, 255, 0.7);
-          backdrop-filter: blur(12px);
-          -webkit-backdrop-filter: blur(12px);
-          border: 1px solid rgba(255, 255, 255, 0.85);
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-        }
-        .ticket-stub {
-          position: relative;
-          background: white;
-          border-radius: 22px;
-          box-shadow: 0 20px 60px -12px rgba(37, 99, 235, 0.2), 0 0 0 1px rgba(226, 232, 240, 0.9);
-          overflow: hidden;
-        }
-        .ticket-perforation-divider {
-          position: relative;
-          height: 24px;
-          display: flex;
-          align-items: center;
-          background: white;
-          overflow: visible;
-        }
-        .ticket-perforation-line {
-          width: 100%;
-          border-top: 2px dashed rgba(203, 213, 225, 0.9);
-          margin: 0 24px;
-        }
-        .ticket-notch-l, .ticket-notch-r {
-          position: absolute;
-          width: 22px;
-          height: 22px;
-          border-radius: 50%;
-          background: #e6eff8;
-          box-shadow: inset 0 2px 5px rgba(30, 58, 138, 0.15), inset 0 0 0 1px rgba(203, 213, 225, 0.5);
-          z-index: 5;
-        }
-        .ticket-notch-l { left: -11px; }
-        .ticket-notch-r { right: -11px; }
-        .interactive-hover-lift {
-          transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .interactive-hover-lift:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 12px 28px -8px rgba(37, 99, 235, 0.18);
-        }
-        .window-card-btn {
-          transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-          cursor: pointer;
-        }
-        .window-card-btn:hover {
-          transform: translateY(-2px);
-          border-color: rgba(59, 130, 246, 0.4) !important;
-          box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.12);
-        }
-        .purpose-card-btn {
-          transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
-          cursor: pointer;
-        }
-        .purpose-card-btn:hover {
-          transform: translateY(-1.5px);
-          border-color: rgba(59, 130, 246, 0.35) !important;
-          box-shadow: 0 6px 18px -4px rgba(59, 130, 246, 0.12);
-        }
-        .slot-btn {
-          transition: all 0.18s ease;
-        }
-        .slot-btn:hover:not(:disabled) {
-          border-color: rgba(59, 130, 246, 0.5) !important;
-          transform: translateX(3px);
-        }
-        .ticket-header-gradient {
-          background-size: 200% 200%;
-          animation: subtleShimmer 12s ease infinite;
-        }
-        @keyframes subtleShimmer {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-
-        /* ── Responsive / Mobile ──────────────────────────────────── */
-        @media (max-width: 900px) {
-          .home-layout-grid { grid-template-columns: 1fr !important; }
-          .queue-split-grid { grid-template-columns: 1fr !important; }
-          .booking-cal-grid { grid-template-columns: 1fr !important; }
-          .confirm-layout-grid { grid-template-columns: 1fr !important; }
-        }
-        /* ── Print / Save ───────────────────────────────────────────── */
-        @media print {
-          header, footer, .no-print { display: none !important; }
-          body * { visibility: hidden !important; }
-          .ticket-print-area, .ticket-print-area * { visibility: visible !important; }
-          .ticket-print-area {
-            position: fixed !important; left: 0 !important; top: 0 !important;
-            width: 100% !important; display: flex !important;
-            justify-content: center !important; padding: 40px !important;
-            background: white !important;
-          }
-        }
-      `}</style>
-
         {/* ── HEADER ──────────────────────────────────────────────── */}
         <header
           style={{
