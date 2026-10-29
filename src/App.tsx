@@ -35,7 +35,15 @@ import {
   CreditCard,
   IdentificationCard,
   Receipt,
+  GearSix,
+  CaretDown,
+  ShieldCheck,
+  Eye,
 } from "@phosphor-icons/react";
+import SettingsModal from "./settings/SettingsModal";
+import { useUserSettings } from "./settings/useUserSettings";
+import type { QueueDisplayMode, SettingsTab } from "./settings/types";
+import { formatQueueDisplayName } from "./utils/formatQueueDisplayName";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 interface AppTicket {
@@ -82,6 +90,8 @@ interface SelectedSlot {
 interface QueueItem {
   ticket_number: string;
   user_name: string;
+  public_display_name?: string | null;
+  account_id?: string | null;
   appointment_time: string;
   department: string;
 }
@@ -205,6 +215,9 @@ function QueueColumn({
   nowServingTicket,
   queue,
   pulseQueue,
+  currentUserId,
+  currentUserTicketNumber,
+  currentUserDisplayMode,
 }: {
   title: string;
   icon: React.ReactNode;
@@ -212,6 +225,9 @@ function QueueColumn({
   nowServingTicket: string | null;
   queue: QueueItem[];
   pulseQueue: boolean;
+  currentUserId?: string;
+  currentUserTicketNumber?: string | null;
+  currentUserDisplayMode?: QueueDisplayMode;
 }) {
   return (
     <div
@@ -289,25 +305,59 @@ function QueueColumn({
             No users waiting.
           </div>
         ) : (
-          queue.map((q: QueueItem, i: number) => (
-            <div
-              key={q.ticket_number}
-              className="queue-item"
-              style={{ padding: "9px 20px", display: "flex", alignItems: "center", gap: 12, borderLeft: "3px solid transparent" }}
-            >
-              <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, color: "var(--slate-400)", minWidth: 46 }}>
-                {q.ticket_number}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: "var(--slate-700)" }}>{q.user_name}</div>
-                <div style={{ fontSize: 11, color: "var(--slate-400)" }}>
-                  {/* Strip date prefix if present (future bookings store "YYYY-MM-DDThh:mm AM") */}
-                  {q.appointment_time?.includes("T") ? q.appointment_time.split("T")[1] : q.appointment_time}
+          queue.map((q: QueueItem, i: number) => {
+            const isOwnRow = Boolean(
+              (currentUserId && q.account_id && q.account_id === currentUserId) ||
+                (currentUserTicketNumber && q.ticket_number === currentUserTicketNumber)
+            );
+            const renderedName = isOwnRow && currentUserDisplayMode
+              ? formatQueueDisplayName(q.user_name, currentUserDisplayMode)
+              : q.public_display_name || q.user_name;
+
+            return (
+              <div
+                key={q.ticket_number}
+                className="queue-item"
+                style={{
+                  padding: "9px 20px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  borderLeft: isOwnRow ? `3px solid ${accentColor}` : "3px solid transparent",
+                  background: isOwnRow ? `${accentColor}08` : "transparent",
+                }}
+              >
+                <div style={{ fontFamily: "'Space Mono', monospace", fontSize: 12, fontWeight: 700, color: isOwnRow ? accentColor : "var(--slate-400)", minWidth: 46 }}>
+                  {q.ticket_number}
                 </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: isOwnRow ? 700 : 500, color: "var(--slate-700)", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span>{renderedName}</span>
+                    {isOwnRow && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          color: accentColor,
+                          background: `${accentColor}16`,
+                          border: `1px solid ${accentColor}30`,
+                          borderRadius: 99,
+                          padding: "1px 6px",
+                        }}
+                      >
+                        You
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--slate-400)" }}>
+                    {/* Strip date prefix if present (future bookings store "YYYY-MM-DDThh:mm AM") */}
+                    {q.appointment_time?.includes("T") ? q.appointment_time.split("T")[1] : q.appointment_time}
+                  </div>
+                </div>
+                <span style={{ fontSize: 11, color: "var(--slate-400)", fontWeight: 500 }}>#{i + 1}</span>
               </div>
-              <span style={{ fontSize: 11, color: "var(--slate-400)", fontWeight: 500 }}>#{i + 1}</span>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
@@ -342,13 +392,64 @@ export default function App() {
     }));
   }, []);
 
+  // ── Auth State ───────────────────────────────────────────────
+  const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState<boolean>(false);
+  const [customFullName, setCustomFullName] = useState<string | null>(null);
+
+  // ── User Profile & Settings State ────────────────────────────
+  const {
+    settings,
+    saving: settingsSaving,
+    saveSettings,
+  } = useUserSettings(session?.user?.id ?? "");
+  const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>("profile");
+  const [showUserDropdown, setShowUserDropdown] = useState<boolean>(false);
+  const userDropdownRef = useRef<HTMLDivElement>(null);
+
+  const openSettingsAtTab = (tab: SettingsTab = "profile") => {
+    setShowUserDropdown(false);
+    setSettingsInitialTab(tab);
+    setShowSettingsModal(true);
+  };
+
+  // Close user dropdown on outside click or Escape
+  useEffect(() => {
+    if (!showUserDropdown) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (
+        userDropdownRef.current &&
+        !userDropdownRef.current.contains(e.target as Node)
+      ) {
+        setShowUserDropdown(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowUserDropdown(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("keydown", handleKey);
+    };
+  }, [showUserDropdown]);
+
   // ── Vanta Background State ──────────────────────────────────────────────
   const vantaRef = useRef<HTMLDivElement>(null);
   const vantaEffectRef = useRef<any>(null);
   useEffect(() => {
+    if (settings.reduceMotion) {
+      if (vantaEffectRef.current) {
+        vantaEffectRef.current.destroy();
+        vantaEffectRef.current = null;
+      }
+      return;
+    }
     // Small delay to ensure CDN scripts are fully parsed before init
     const init = () => {
-      if (vantaRef.current && (window as any).VANTA) {
+      if (vantaRef.current && (window as any).VANTA && !vantaEffectRef.current) {
         try {
           vantaEffectRef.current = (window as any).VANTA.WAVES({
             el: vantaRef.current,
@@ -378,11 +479,7 @@ export default function App() {
         vantaEffectRef.current = null;
       }
     };
-  }, []); // Empty dep array — run once on mount, clean up on unmount
-
-  // ── Auth State ───────────────────────────────────────────────
-  const [session, setSession] = useState<Session | null>(null);
-  const [authReady, setAuthReady] = useState<boolean>(false);
+  }, [settings.reduceMotion]);
 
   // ── Booking State ────────────────────────────────────────────
   const [currentMonth, setCurrentMonth] = useState<number>(today.getMonth());
@@ -673,8 +770,10 @@ export default function App() {
   // Use immutable session.user.id (UUID) as the canonical accountId —
   // never parse identity from the email string (anti-spoofing).
   const displayName: string =
+    (customFullName ?? "").trim() ||
     ((session?.user?.user_metadata?.display_name as string | undefined) ?? "")
-      .trim() || "SASCHED User";
+      .trim() ||
+    "SASCHED User";
 
   const currentUser: CurrentUser = {
     name: displayName,
@@ -683,6 +782,7 @@ export default function App() {
   };
 
   const openHistoryModal = async () => {
+    setShowUserDropdown(false);
     setShowHistoryModal(true);
     setHistoryLoading(true);
     try {
@@ -716,6 +816,46 @@ export default function App() {
   useEffect(() => {
     ticketRef.current = ticket;
   }, [ticket]);
+
+  const settingsRef = useRef(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const alertedThresholdRef = useRef<string | null>(null);
+  const checkThresholdAlert = (
+    pos: number,
+    ticketNum: string,
+    windowLabel: string
+  ) => {
+    const threshold = settingsRef.current.alertThreshold;
+    if (threshold > 0 && pos > 0 && pos <= threshold) {
+      const alertKey = `${ticketNum}:threshold:${threshold}`;
+      if (alertedThresholdRef.current !== alertKey) {
+        alertedThresholdRef.current = alertKey;
+        if (settingsRef.current.audioChimeEnabled) {
+          playTurnChime();
+        }
+        if (
+          settingsRef.current.browserNotifications &&
+          "Notification" in window &&
+          Notification.permission === "granted"
+        ) {
+          try {
+            new Notification(`Almost Your Turn (#${pos} in line) — SASCHED`, {
+              body: `Ticket ${ticketNum} is now #${pos} in line for ${windowLabel}. Please get ready!`,
+              icon: "/logo.png",
+            });
+          } catch {
+            // Ignore notification errors
+          }
+        }
+        showToast(
+          `Heads up! Ticket ${ticketNum} is now #${pos} in line for ${windowLabel}.`
+        );
+      }
+    }
+  };
 
   // ── Fetch & Realtime Sync ────────────────────────────────────
   useEffect(() => {
@@ -789,7 +929,7 @@ export default function App() {
         error,
       } = await supabase
         .from("queue_tickets")
-        .select("ticket_number, user_name, appointment_time, department", {
+        .select("*", {
           count: "exact",
         })
         .eq("status", "waiting")
@@ -826,7 +966,13 @@ export default function App() {
             const myIndex = deptWaiting.findIndex(
               (r) => r.ticket_number === myTicketData.ticket_number
             );
-            setQueuePosition(myIndex === -1 ? 0 : myIndex + 1);
+            const pos = myIndex === -1 ? 0 : myIndex + 1;
+            setQueuePosition(pos);
+            checkThresholdAlert(
+              pos,
+              myTicketData.ticket_number,
+              myTicketData.destination_window || myTicketData.department
+            );
           } else {
             setQueuePosition(null);
           }
@@ -858,9 +1004,11 @@ export default function App() {
           const row = payload.new;
           if (row.status !== "waiting") return;
 
-          const item = {
+          const item: QueueItem = {
             ticket_number: row.ticket_number,
             user_name: row.user_name,
+            public_display_name: row.public_display_name,
+            account_id: row.account_id,
             appointment_time: row.appointment_time,
             department: row.department,
           };
@@ -906,24 +1054,26 @@ export default function App() {
             });
           }
 
-          // If ticket was recalled or put back to waiting
+          // If ticket was recalled, put back to waiting, or had its public_display_name updated
           if (row.status === "waiting") {
-            const item = {
+            const item: QueueItem = {
               ticket_number: row.ticket_number,
               user_name: row.user_name,
+              public_display_name: row.public_display_name,
+              account_id: row.account_id,
               appointment_time: row.appointment_time,
               department: row.department,
             };
             if (dept === "Cashier") {
               setCashierQueue((prev) =>
                 prev.some((r) => r.ticket_number === row.ticket_number)
-                  ? prev
+                  ? prev.map((r) => (r.ticket_number === row.ticket_number ? item : r))
                   : [...prev, item]
               );
             } else if (dept === "Registrar") {
               setRegistrarQueue((prev) =>
                 prev.some((r) => r.ticket_number === row.ticket_number)
-                  ? prev
+                  ? prev.map((r) => (r.ticket_number === row.ticket_number ? item : r))
                   : [...prev, item]
               );
             }
@@ -957,8 +1107,12 @@ export default function App() {
             if (row.status === "serving") {
               setIsYourTurn(true);
               setQueuePosition(0);
-              playTurnChime();
-              notifyTurn(row.ticket_number, row.destination_window || dept);
+              if (settingsRef.current.audioChimeEnabled) {
+                playTurnChime();
+              }
+              if (settingsRef.current.browserNotifications) {
+                notifyTurn(row.ticket_number, row.destination_window || dept);
+              }
             } else if (["served", "noshow", "removed", "cancelled"].includes(row.status)) {
               // Session concluded — show in-app modal instead of native alert
               setSessionEndedStatus(row.status);
@@ -966,6 +1120,7 @@ export default function App() {
               setTicket(null);
               setIsYourTurn(false);
               setStep("home");
+              alertedThresholdRef.current = null;
             }
           }
 
@@ -994,7 +1149,13 @@ export default function App() {
                   const myIndex = deptData.findIndex(
                     (r) => r.ticket_number === ticketRef.current!.number
                   );
-                  setQueuePosition(myIndex === -1 ? 0 : myIndex + 1);
+                  const pos = myIndex === -1 ? 0 : myIndex + 1;
+                  setQueuePosition(pos);
+                  checkThresholdAlert(
+                    pos,
+                    ticketRef.current.number,
+                    ticketRef.current.window || myDept
+                  );
                 } else {
                   setQueuePosition(null);
                 }
@@ -1204,27 +1365,50 @@ export default function App() {
     const datePrefix = `${selectedDate!.year}-${String(selectedDate!.month + 1).padStart(2, "0")}-${String(selectedDate!.day).padStart(2, "0")}`;
     const appointmentTimeValue = isDateToday ? slotTime : `${datePrefix}T${slotTime}`;
 
-    // Request browser notification permission so student gets notified on their turn
-    if ("Notification" in window && Notification.permission === "default") {
+    // Request browser notification permission only if user enabled browser notifications in Settings
+    if (
+      settings.browserNotifications &&
+      "Notification" in window &&
+      Notification.permission === "default"
+    ) {
       try {
         Notification.requestPermission();
       } catch (_) {}
     }
 
-    // Save to Supabase
-    const { error } = await supabase.from("queue_tickets").insert([
+    const publicDisplayName = formatQueueDisplayName(
+      currentUser.name,
+      settings.queueDisplayMode
+    );
+
+    const basePayload = {
+      ticket_number: num,
+      user_name: currentUser.name,
+      account_id: currentUser.accountId,
+      service_type: purposeOfVisit,
+      destination_window: windowLabel,
+      department: department,
+      appointment_time: appointmentTimeValue,
+      status: "waiting",
+      booking_type: isWalkin ? "walkin" : "booked",
+    };
+
+    // Save to Supabase (includes public_display_name, with automatic fallback if column not migrated yet)
+    let { error } = await supabase.from("queue_tickets").insert([
       {
-        ticket_number: num,
-        user_name: currentUser.name,
-        account_id: currentUser.accountId,
-        service_type: purposeOfVisit,
-        destination_window: windowLabel,
-        department: department,
-        appointment_time: appointmentTimeValue,
-        status: "waiting",
-        booking_type: isWalkin ? "walkin" : "booked",
+        ...basePayload,
+        public_display_name: publicDisplayName,
       },
     ]);
+
+    if (
+      error &&
+      (error.code === "PGRST204" ||
+        (error.message || "").toLowerCase().includes("public_display_name"))
+    ) {
+      const retry = await supabase.from("queue_tickets").insert([basePayload]);
+      error = retry.error;
+    }
 
     setBookingLoading(false);
 
@@ -1236,6 +1420,7 @@ export default function App() {
       return;
     }
 
+    alertedThresholdRef.current = null;
     setHasActiveTicket(true);
     setTicket({
       number: num,
@@ -1391,7 +1576,18 @@ export default function App() {
         }}
       >
         {/* Vanta Waves Background — fixed so it covers whole viewport */}
-        <div ref={vantaRef} style={{ position: "fixed", top: 0, left: 0, width: "100vw", height: "100vh", zIndex: 0 }} />
+        <div
+          ref={vantaRef}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            zIndex: 0,
+            display: settings.reduceMotion ? "none" : "block",
+          }}
+        />
         <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&family=Space+Mono:wght@400;700&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1621,35 +1817,359 @@ export default function App() {
               </div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              {/* Account ID badge */}
-              <div
+              {/* Interactive Account ID pill + User Dropdown Menu */}
+              <div ref={userDropdownRef} style={{ position: "relative" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowUserDropdown((prev) => !prev)}
+                  title="Account & Settings"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 7,
+                    background: showUserDropdown
+                      ? "rgba(219, 234, 254, 0.9)"
+                      : "rgba(239, 246, 255, 0.7)",
+                    backdropFilter: "blur(8px)",
+                    WebkitBackdropFilter: "blur(8px)",
+                    border: showUserDropdown
+                      ? "1px solid var(--blue-400)"
+                      : "1px solid rgba(191, 219, 254, 0.8)",
+                    borderRadius: 99,
+                    padding: "5px 12px",
+                    boxShadow: showUserDropdown
+                      ? "0 4px 12px rgba(37, 99, 235, 0.12)"
+                      : "0 1px 3px rgba(0, 0, 0, 0.02)",
+                    cursor: "pointer",
+                    fontFamily: "'Outfit', sans-serif",
+                    transition: "all 0.18s ease",
+                  }}
+                >
+                  <UserCheck size={13} color="var(--blue-600)" />
+                  <span
+                    style={{
+                      fontSize: 12,
+                      color: "var(--blue-700)",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {currentUser.name}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--blue-400)" }}>
+                    · {currentUser.email}
+                  </span>
+                  {settings.queueDisplayMode !== "full_name" && (
+                    <span
+                      title={`Public Queue Privacy: ${
+                        settings.queueDisplayMode === "initials"
+                          ? "Initials & Last Name"
+                          : "Ticket Only (Anonymous)"
+                      }`}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 3,
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "#1d4ed8",
+                        background: "rgba(37, 99, 235, 0.12)",
+                        borderRadius: 99,
+                        padding: "1px 6px",
+                      }}
+                    >
+                      <ShieldCheck size={11} weight="fill" />
+                      {settings.queueDisplayMode === "initials" ? "Initials" : "Anon"}
+                    </span>
+                  )}
+                  <CaretDown
+                    size={11}
+                    weight="bold"
+                    color="var(--blue-600)"
+                    style={{
+                      transform: showUserDropdown ? "rotate(180deg)" : "rotate(0deg)",
+                      transition: "transform 0.18s ease",
+                    }}
+                  />
+                </button>
+
+                <AnimatePresence>
+                  {showUserDropdown && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8, scale: 0.97 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                      transition={{ duration: 0.16, ease: "easeOut" }}
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 8px)",
+                        right: 0,
+                        width: 270,
+                        background: "rgba(255, 255, 255, 0.96)",
+                        backdropFilter: "blur(16px)",
+                        WebkitBackdropFilter: "blur(16px)",
+                        border: "1px solid rgba(226, 232, 240, 0.95)",
+                        borderRadius: 16,
+                        boxShadow:
+                          "0 18px 38px -10px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.06)",
+                        padding: 8,
+                        zIndex: 120,
+                      }}
+                    >
+                      {/* User identity summary header */}
+                      <div
+                        style={{
+                          padding: "10px 12px",
+                          borderBottom: "1px solid var(--slate-100)",
+                          marginBottom: 6,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "var(--slate-800)",
+                            lineHeight: 1.25,
+                          }}
+                        >
+                          {currentUser.name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--slate-400)",
+                            marginTop: 2,
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {currentUser.email}
+                        </div>
+                        {(settings.studentId || settings.programSection) && (
+                          <div
+                            style={{
+                              display: "flex",
+                              flexWrap: "wrap",
+                              gap: 5,
+                              marginTop: 7,
+                            }}
+                          >
+                            {settings.studentId && (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color: "var(--blue-700)",
+                                  background: "var(--blue-50)",
+                                  border: "1px solid var(--blue-200)",
+                                  borderRadius: 6,
+                                  padding: "2px 6px",
+                                  fontFamily: "'Space Mono', monospace",
+                                }}
+                              >
+                                ID: {settings.studentId}
+                              </span>
+                            )}
+                            {settings.programSection && (
+                              <span
+                                style={{
+                                  fontSize: 10,
+                                  fontWeight: 600,
+                                  color: "var(--slate-600)",
+                                  background: "var(--slate-100)",
+                                  borderRadius: 6,
+                                  padding: "2px 6px",
+                                }}
+                              >
+                                {settings.programSection}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Dropdown items */}
+                      {[
+                        {
+                          label: "Profile & Settings",
+                          sub: "Student ID, course & preferences",
+                          icon: <GearSix size={15} color="var(--blue-600)" weight="duotone" />,
+                          onClick: () => openSettingsAtTab("profile"),
+                        },
+                        {
+                          label: "Queue & Privacy",
+                          sub:
+                            settings.queueDisplayMode === "full_name"
+                              ? "Showing Full Name"
+                              : settings.queueDisplayMode === "initials"
+                                ? "Showing Initials Only"
+                                : "Showing Ticket Code Only",
+                          icon: <Eye size={15} color="#7c3aed" weight="duotone" />,
+                          onClick: () => openSettingsAtTab("privacy"),
+                        },
+                        {
+                          label: "My History",
+                          sub: "Past appointments & tickets",
+                          icon: (
+                            <ClockCounterClockwise
+                              size={15}
+                              color="var(--slate-600)"
+                              weight="duotone"
+                            />
+                          ),
+                          onClick: () => {
+                            setShowUserDropdown(false);
+                            openHistoryModal();
+                          },
+                        },
+                      ].map((item) => (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={item.onClick}
+                          style={{
+                            width: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "8px 10px",
+                            borderRadius: 10,
+                            border: "none",
+                            background: "transparent",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontFamily: "'Outfit', sans-serif",
+                            transition: "background 0.15s ease",
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "var(--slate-100)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "transparent";
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: 8,
+                              background: "var(--slate-50)",
+                              border: "1px solid var(--slate-200)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {item.icon}
+                          </div>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "var(--slate-800)",
+                              }}
+                            >
+                              {item.label}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--slate-400)",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {item.sub}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+
+                      <div
+                        style={{
+                          height: 1,
+                          background: "var(--slate-100)",
+                          margin: "6px 4px",
+                        }}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUserDropdown(false);
+                          setShowLogoutConfirm(true);
+                        }}
+                        style={{
+                          width: "100%",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "8px 10px",
+                          borderRadius: 10,
+                          border: "none",
+                          background: "transparent",
+                          color: "#dc2626",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: "pointer",
+                          fontFamily: "'Outfit', sans-serif",
+                          transition: "background 0.15s ease",
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = "rgba(239, 68, 68, 0.08)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = "transparent";
+                        }}
+                      >
+                        <SignOut size={15} color="#dc2626" weight="bold" />
+                        <span>Log Out</span>
+                      </button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* Settings pill button */}
+              <button
+                type="button"
+                onClick={() => openSettingsAtTab("profile")}
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: 7,
-                  background: "rgba(239, 246, 255, 0.7)",
+                  gap: 6,
+                  background: "rgba(255, 255, 255, 0.65)",
                   backdropFilter: "blur(8px)",
                   WebkitBackdropFilter: "blur(8px)",
-                  border: "1px solid rgba(191, 219, 254, 0.8)",
+                  border: "1px solid rgba(226, 232, 240, 0.85)",
                   borderRadius: 99,
                   padding: "5px 12px",
+                  fontSize: 12,
+                  color: "var(--slate-600)",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily: "'Outfit', sans-serif",
+                  transition: "all 0.18s ease",
                   boxShadow: "0 1px 3px rgba(0, 0, 0, 0.02)",
                 }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "var(--blue-300)";
+                  e.currentTarget.style.color = "var(--blue-600)";
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.9)";
+                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(37,99,235,0.08)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(226, 232, 240, 0.85)";
+                  e.currentTarget.style.color = "var(--slate-600)";
+                  e.currentTarget.style.background = "rgba(255, 255, 255, 0.65)";
+                  e.currentTarget.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.02)";
+                }}
               >
-                <UserCheck size={13} color="var(--blue-600)" />
-                <span
-                  style={{
-                    fontSize: 12,
-                    color: "var(--blue-700)",
-                    fontWeight: 600,
-                  }}
-                >
-                  {currentUser.name}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--blue-400)" }}>
-                  · {currentUser.email}
-                </span>
-              </div>
+                <GearSix size={13} weight="bold" />
+                <span>Settings</span>
+              </button>
+
               {/* My History button */}
               <button
                 onClick={openHistoryModal}
@@ -1943,37 +2463,38 @@ export default function App() {
                   boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
                 }}
               >
-                {/* Animated Floating Snow / Starry Particles */}
-                {heroParticles.map((p, i) => (
-                  <motion.div
-                    key={i}
-                    animate={{
-                      y: [0, p.driftY, 0],
-                      x: [0, p.driftX, 0],
-                      opacity: [0.3, 0.95, 0.3],
-                      scale: [0.85, 1.25, 0.85],
-                    }}
-                    transition={{
-                      duration: p.duration,
-                      delay: p.delay,
-                      repeat: Infinity,
-                      ease: "easeInOut",
-                    }}
-                    style={{
-                      position: "absolute",
-                      top: p.top,
-                      left: p.left,
-                      width: p.size,
-                      height: p.size,
-                      borderRadius: "50%",
-                      background: p.color,
-                      boxShadow: p.glow
-                        ? `0 0 8px 2px ${p.color}, 0 0 16px rgba(147, 197, 253, 0.7)`
-                        : `0 0 5px 1px ${p.color}`,
-                      pointerEvents: "none",
-                    }}
-                  />
-                ))}
+                {/* Animated Floating Snow / Starry Particles (disabled when Reduce Motion is active) */}
+                {!settings.reduceMotion &&
+                  heroParticles.map((p, i) => (
+                    <motion.div
+                      key={i}
+                      animate={{
+                        y: [0, p.driftY, 0],
+                        x: [0, p.driftX, 0],
+                        opacity: [0.3, 0.95, 0.3],
+                        scale: [0.85, 1.25, 0.85],
+                      }}
+                      transition={{
+                        duration: p.duration,
+                        delay: p.delay,
+                        repeat: Infinity,
+                        ease: "easeInOut",
+                      }}
+                      style={{
+                        position: "absolute",
+                        top: p.top,
+                        left: p.left,
+                        width: p.size,
+                        height: p.size,
+                        borderRadius: "50%",
+                        background: p.color,
+                        boxShadow: p.glow
+                          ? `0 0 8px 2px ${p.color}, 0 0 16px rgba(147, 197, 253, 0.7)`
+                          : `0 0 5px 1px ${p.color}`,
+                        pointerEvents: "none",
+                      }}
+                    />
+                  ))}
 
                 <div style={{ position: "relative", zIndex: 1, maxWidth: 600 }}>
                   <div
@@ -2202,6 +2723,9 @@ export default function App() {
                       nowServingTicket={nowServingCashier}
                       queue={cashierQueue}
                       pulseQueue={pulseQueue}
+                      currentUserId={currentUser.accountId}
+                      currentUserTicketNumber={ticket?.number}
+                      currentUserDisplayMode={settings.queueDisplayMode}
                     />
                     <QueueColumn
                       title="Registrar Window"
@@ -2210,6 +2734,9 @@ export default function App() {
                       nowServingTicket={nowServingRegistrar}
                       queue={registrarQueue}
                       pulseQueue={pulseQueue}
+                      currentUserId={currentUser.accountId}
+                      currentUserTicketNumber={ticket?.number}
+                      currentUserDisplayMode={settings.queueDisplayMode}
                     />
                   </div>
                 </div>
@@ -5393,6 +5920,22 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* ── USER PROFILE & SETTINGS MODAL ──────────────────────── */}
+        <SettingsModal
+          isOpen={showSettingsModal}
+          initialTab={settingsInitialTab}
+          onClose={() => setShowSettingsModal(false)}
+          userName={currentUser.name}
+          userEmail={currentUser.email}
+          activeTicketNumber={ticket?.number}
+          settings={settings}
+          saving={settingsSaving}
+          onSave={saveSettings}
+          onTestChime={handleTestChime}
+          onShowToast={showToast}
+          onFullNameUpdated={(name) => setCustomFullName(name)}
+        />
 
         {/* ── TOAST NOTIFICATION ───────────────────────────────── */}
         <AnimatePresence>
