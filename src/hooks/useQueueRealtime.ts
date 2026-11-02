@@ -58,8 +58,11 @@ export function useQueueRealtime({
   const [cashierQueue, setCashierQueue] = useState<QueueItem[]>([]);
   const [registrarQueue, setRegistrarQueue] = useState<QueueItem[]>([]);
 
-  // ── Total across both departments ───────────────────────────
-  const [liveQueueCount, setLiveQueueCount] = useState<number | null>(null);
+  // ── Track whether initial waiting queue has loaded ───────────
+  const [queueLoaded, setQueueLoaded] = useState<boolean>(false);
+  const liveQueueCount: number | null = queueLoaded
+    ? cashierQueue.length + registrarQueue.length
+    : null;
 
   // ── Realtime Refs to prevent WebSocket disconnections ────────
   const ticketRef = useRef(ticket);
@@ -118,8 +121,12 @@ export function useQueueRealtime({
 
   // ── Fetch & Realtime Sync ────────────────────────────────────
   useEffect(() => {
+    if (!session) {
+      setQueueLoaded(false);
+      return;
+    }
+
     const fetchInitial = async () => {
-      if (!session) return;
 
       // 1. Check for User's Active Ticket (One-Ticket Policy)
       // Use order + limit(1) + maybeSingle() so duplicate active rows in test data never crash with PGRST116
@@ -210,7 +217,7 @@ export function useQueueRealtime({
         setRegistrarQueue(
           todayWaiting.filter((r) => r.department === "Registrar")
         );
-        setLiveQueueCount(todayWaiting.length);
+        setQueueLoaded(true);
 
         // Find my position if I have a ticket for TODAY
         if (myTicketData && myTicketData.status === "waiting") {
@@ -272,13 +279,11 @@ export function useQueueRealtime({
           if (row.department === "Cashier") {
             setCashierQueue((prev) => {
               if (prev.some((r) => r.ticket_number === item.ticket_number)) return prev;
-              setLiveQueueCount((c) => (c ?? 0) + 1);
               return [...prev, item];
             });
           } else if (row.department === "Registrar") {
             setRegistrarQueue((prev) => {
               if (prev.some((r) => r.ticket_number === item.ticket_number)) return prev;
-              setLiveQueueCount((c) => (c ?? 0) + 1);
               return [...prev, item];
             });
           }
@@ -296,14 +301,12 @@ export function useQueueRealtime({
           if (["serving", "served", "noshow", "removed"].includes(row.status)) {
             setCashierQueue((q) => {
               if (q.some((r) => r.ticket_number === row.ticket_number)) {
-                setLiveQueueCount((c) => Math.max(0, (c ?? 1) - 1));
                 return q.filter((r) => r.ticket_number !== row.ticket_number);
               }
               return q;
             });
             setRegistrarQueue((q) => {
               if (q.some((r) => r.ticket_number === row.ticket_number)) {
-                setLiveQueueCount((c) => Math.max(0, (c ?? 1) - 1));
                 return q.filter((r) => r.ticket_number !== row.ticket_number);
               }
               return q;
@@ -328,7 +331,6 @@ export function useQueueRealtime({
                   );
                 }
                 if (!isForToday(row.appointment_time)) return prev;
-                setLiveQueueCount((c) => (c ?? 0) + 1);
                 return [...prev, item];
               });
             } else if (dept === "Registrar") {
@@ -339,7 +341,6 @@ export function useQueueRealtime({
                   );
                 }
                 if (!isForToday(row.appointment_time)) return prev;
-                setLiveQueueCount((c) => (c ?? 0) + 1);
                 return [...prev, item];
               });
             }

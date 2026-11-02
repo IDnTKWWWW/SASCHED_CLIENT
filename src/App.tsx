@@ -93,7 +93,7 @@ export default function App() {
   };
 
   // ── Vanta Background State ──────────────────────────────────────────────
-  const vantaRef = useVantaWaves(settings.reduceMotion);
+  const vantaRef = useVantaWaves(settings.reduceMotion, Boolean(session), "light");
 
   // ── Booking State ────────────────────────────────────────────
   const [currentMonth, setCurrentMonth] = useState<number>(today.getMonth());
