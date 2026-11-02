@@ -19,6 +19,8 @@ import { isTicketToday } from "../../utils/dateAndSlots";
 
 export interface TicketViewProps {
   ticket: AppTicket;
+  studentId: string;
+  programSection: string;
   hasActiveTicket: boolean;
   ticketVisible: boolean;
   ticketNumCopied: boolean;
@@ -34,6 +36,8 @@ export interface TicketViewProps {
 
 export default function TicketView({
   ticket,
+  studentId,
+  programSection,
   hasActiveTicket,
   ticketVisible,
   ticketNumCopied,
@@ -47,6 +51,8 @@ export default function TicketView({
   reset,
 }: TicketViewProps) {
   const [shareCopied, setShareCopied] = useState<boolean>(false);
+  const trimmedStudentId = studentId.trim();
+  const trimmedProgramSection = programSection.trim();
 
   // ── Share ticket details (Web Share API → clipboard fallback) ────
   const handleShare = async () => {
@@ -55,6 +61,8 @@ export default function TicketView({
       `SASCHED Appointment Ticket`,
       `Ticket #: ${ticket.number}`,
       `Name: ${ticket.name}`,
+      ...(trimmedStudentId ? [`Student ID: ${trimmedStudentId}`] : []),
+      ...(trimmedProgramSection ? [`Program / Section: ${trimmedProgramSection}`] : []),
       `Date: ${ticket.date}`,
       `Time: ${ticket.time}`,
       `Window: ${ticket.window}`,
@@ -291,14 +299,45 @@ export default function TicketView({
               }}
             >
               {[
-                { label: "Name", value: ticket.name },
-                { label: "Account ID", value: ticket.id, mono: true, isId: true },
-                { label: "Date", value: ticket.date },
-                { label: "Time", value: ticket.time },
-                { label: "Purpose", value: ticket.service_type },
-                { label: "Window", value: ticket.window },
+                { label: "Name", value: ticket.name, fullWidth: false },
+                trimmedStudentId
+                  ? {
+                      label: "Student ID",
+                      value: trimmedStudentId,
+                      mono: true,
+                      isId: false,
+                      fullWidth: false,
+                    }
+                  : {
+                      label: "Account ID",
+                      value: ticket.id,
+                      mono: true,
+                      isId: true,
+                      fullWidth: false,
+                    },
+                ...(trimmedProgramSection
+                  ? [
+                      {
+                        label: "Program / Section",
+                        value: trimmedProgramSection,
+                        mono: false,
+                        isId: false,
+                        fullWidth: true,
+                      },
+                    ]
+                  : []),
+                { label: "Date", value: ticket.date, fullWidth: false },
+                { label: "Time", value: ticket.time, fullWidth: false },
+                { label: "Purpose", value: ticket.service_type, fullWidth: false },
+                { label: "Window", value: ticket.window, fullWidth: false },
               ].map((field) => (
-                <div key={field.label} style={{ minWidth: 0 }}>
+                <div
+                  key={field.label}
+                  style={{
+                    minWidth: 0,
+                    gridColumn: field.fullWidth ? "1 / -1" : undefined,
+                  }}
+                >
                   <div
                     style={{
                       fontSize: 10,

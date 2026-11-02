@@ -14,7 +14,9 @@ import {
   IdentificationCard,
   CreditCard,
   MapPin,
+  GearSix,
 } from "@phosphor-icons/react";
+import type { SettingsTab } from "../../settings/types";
 import {
   WINDOWS,
   VENUE,
@@ -29,6 +31,9 @@ import {
 
 export interface ConfirmViewProps {
   currentUser: CurrentUser;
+  studentId: string;
+  programSection: string;
+  onOpenSettings: (tab?: SettingsTab) => void;
   purposeOfVisit: PurposeOfVisit;
   setPurposeOfVisit: React.Dispatch<React.SetStateAction<PurposeOfVisit>>;
   bookingError: string | null;
@@ -44,6 +49,9 @@ export interface ConfirmViewProps {
 
 export default function ConfirmView({
   currentUser,
+  studentId,
+  programSection,
+  onOpenSettings,
   purposeOfVisit,
   setPurposeOfVisit,
   bookingError,
@@ -56,6 +64,18 @@ export default function ConfirmView({
   cashierQueue,
   registrarQueue,
 }: ConfirmViewProps) {
+  const hasStudentId = Boolean(studentId.trim());
+  const hasProgramSection = Boolean(programSection.trim());
+  const identityFields = [
+    ...(hasStudentId
+      ? [{ label: "Student ID", value: studentId.trim(), mono: true }]
+      : []),
+    ...(hasProgramSection
+      ? [{ label: "Program & Section", value: programSection.trim(), mono: false }]
+      : []),
+    { label: "Account ID", value: currentUser.accountId, mono: true },
+    { label: "Email", value: currentUser.email, mono: false },
+  ];
   return (
     <div
       className="slide-up confirm-layout-grid"
@@ -183,10 +203,7 @@ export default function ConfirmView({
               gap: 10,
             }}
           >
-            {[
-              { label: "Account ID", value: currentUser.accountId },
-              { label: "Email", value: currentUser.email },
-            ].map((f) => (
+            {identityFields.map((f) => (
               <div
                 key={f.label}
                 style={{
@@ -194,6 +211,7 @@ export default function ConfirmView({
                   borderRadius: 10,
                   padding: "10px 12px",
                   border: "1px solid var(--blue-100)",
+                  minWidth: 0,
                 }}
               >
                 <div
@@ -212,11 +230,12 @@ export default function ConfirmView({
                     fontSize: 13,
                     fontWeight: 600,
                     color: "var(--slate-700)",
-                    fontFamily:
-                      f.label === "Account ID"
-                        ? "'Space Mono',monospace"
-                        : "inherit",
+                    fontFamily: f.mono ? "'Space Mono',monospace" : "inherit",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
+                  title={f.value}
                 >
                   {f.value}
                 </div>
@@ -226,15 +245,48 @@ export default function ConfirmView({
           <div
             style={{
               marginTop: 12,
-              fontSize: 11,
-              color: "var(--slate-400)",
               display: "flex",
               alignItems: "center",
-              gap: 5,
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 8,
             }}
           >
-            <Lock size={10} /> This information is tied to your account
-            account and cannot be changed here.
+            <div
+              style={{
+                fontSize: 11,
+                color: "var(--slate-400)",
+                display: "flex",
+                alignItems: "center",
+                gap: 5,
+              }}
+            >
+              <Lock size={10} /> This information is tied to your account and
+              cannot be changed here.
+            </div>
+            {(!hasStudentId || !hasProgramSection) && (
+              <button
+                type="button"
+                onClick={() => onOpenSettings("profile")}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "4px 10px",
+                  borderRadius: 99,
+                  border: "1px solid var(--blue-200)",
+                  background: "white",
+                  color: "var(--blue-600)",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  fontFamily: "inherit",
+                  cursor: "pointer",
+                }}
+              >
+                <GearSix size={12} weight="bold" />
+                Add Student ID / Section in Settings
+              </button>
+            )}
           </div>
         </div>
 

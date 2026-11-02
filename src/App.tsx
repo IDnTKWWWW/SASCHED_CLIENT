@@ -780,6 +780,9 @@ export default function App() {
           {step === "confirm" && (
             <ConfirmView
               currentUser={currentUser}
+              studentId={settings.studentId}
+              programSection={settings.programSection}
+              onOpenSettings={openSettingsAtTab}
               purposeOfVisit={purposeOfVisit}
               setPurposeOfVisit={setPurposeOfVisit}
               bookingError={bookingError}
@@ -800,6 +803,8 @@ export default function App() {
           {step === "ticket" && ticket && (
             <TicketView
               ticket={ticket}
+              studentId={settings.studentId}
+              programSection={settings.programSection}
               hasActiveTicket={hasActiveTicket}
               ticketVisible={ticketVisible}
               ticketNumCopied={ticketNumCopied}
