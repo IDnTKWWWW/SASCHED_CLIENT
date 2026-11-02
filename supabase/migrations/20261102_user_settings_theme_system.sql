@@ -33,3 +33,4 @@ BEGIN
       CHECK (theme IN ('light', 'dark', 'system'));
   END IF;
 END $$;
+
