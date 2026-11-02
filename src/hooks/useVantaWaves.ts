@@ -48,3 +48,4 @@ export function useVantaWaves(reduceMotion: boolean) {
 
   return vantaRef;
 }
+

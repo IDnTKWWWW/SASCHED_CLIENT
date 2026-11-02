@@ -96,3 +96,4 @@ export const MONTHS = [
 export const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export const HERO_WORDS = ["Slot", "Appointment", "Session", "Future"];
+

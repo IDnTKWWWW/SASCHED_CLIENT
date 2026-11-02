@@ -47,3 +47,4 @@ export const notifyTurn = (ticketNum?: string, windowName?: string) => {
     }
   }
 };
+
