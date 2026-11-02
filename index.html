@@ -45,6 +45,34 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.waves.min.js"></script>
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem("sasched_client_prefs_v1");
+          var pref = raw ? JSON.parse(raw).theme : "light";
+          var hasSession = false;
+          for (var i = 0; i < localStorage.length; i++) {
+            var k = localStorage.key(i);
+            if (k && k.indexOf("sb-") === 0 && k.indexOf("-auth-token") !== -1) {
+              hasSession = true;
+              break;
+            }
+          }
+          var resolved =
+            !hasSession
+              ? "light"
+              : pref === "dark"
+                ? "dark"
+                : pref === "system" &&
+                    window.matchMedia &&
+                    window.matchMedia("(prefers-color-scheme: dark)").matches
+                  ? "dark"
+                  : "light";
+          document.documentElement.dataset.theme = resolved;
+          document.documentElement.style.colorScheme = resolved;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

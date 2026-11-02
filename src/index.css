@@ -4,8 +4,9 @@
 
 @layer base {
   body {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: var(--page-bg-solid, #f8fafc);
+    color: var(--slate-900, #0f172a);
+    transition: background-color 0.2s ease, color 0.2s ease;
   }
 }
 

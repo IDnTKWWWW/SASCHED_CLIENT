@@ -169,7 +169,7 @@ export default function StepIndicator({
               padding: "7px 14px",
               borderRadius: 9,
               border: "1px solid var(--slate-200)",
-              background: "white",
+              background: "var(--surface)",
               color: "var(--slate-500)",
               fontSize: 12,
               fontWeight: 600,
@@ -181,12 +181,12 @@ export default function StepIndicator({
             onMouseEnter={(e) => {
               e.currentTarget.style.borderColor = "#ef4444";
               e.currentTarget.style.color = "#ef4444";
-              e.currentTarget.style.background = "#fff5f5";
+              e.currentTarget.style.background = "rgba(239, 68, 68, 0.08)";
             }}
             onMouseLeave={(e) => {
               e.currentTarget.style.borderColor = "var(--slate-200)";
               e.currentTarget.style.color = "var(--slate-500)";
-              e.currentTarget.style.background = "white";
+              e.currentTarget.style.background = "var(--surface)";
             }}
           >
             <X size={13} />

@@ -30,9 +30,9 @@ export default function QueueColumn({
     <div
       className="card-shadow interactive-card"
       style={{
-        background: "white",
+        background: "var(--surface)",
         borderRadius: 16,
-        border: "1px solid rgba(226,232,240,0.6)",
+        border: "1px solid var(--border-soft)",
         overflow: "hidden",
         flex: 1,
       }}

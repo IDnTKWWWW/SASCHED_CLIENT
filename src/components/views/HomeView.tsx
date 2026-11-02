@@ -241,10 +241,10 @@ export default function HomeView({
         <div
           className="card-shadow"
           style={{
-            background: "white",
+            background: "var(--surface)",
             borderRadius: 14,
             padding: "16px 18px",
-            border: "1px solid rgba(226,232,240,0.6)",
+            border: "1px solid var(--border-soft)",
             display: "inline-flex",
             alignItems: "center",
             gap: 16,
@@ -427,8 +427,8 @@ export default function HomeView({
             <div
               className="card-shadow"
               style={{
-                background: "white",
-                border: "1px solid rgba(226,232,240,0.6)",
+                background: "var(--surface)",
+                border: "1px solid var(--border-soft)",
                 borderRadius: 16,
                 padding: "18px",
               }}

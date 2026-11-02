@@ -45,7 +45,8 @@ export default function HistoryModal({
     >
       <div
         style={{
-          background: "white",
+          background: "var(--surface)",
+          border: "1px solid var(--border-soft)",
           borderRadius: 22,
           padding: "28px 26px",
           maxWidth: 520,
@@ -103,7 +104,7 @@ export default function HistoryModal({
               height: 32,
               borderRadius: 8,
               border: "1px solid var(--slate-200)",
-              background: "white",
+              background: "var(--surface)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -201,7 +202,7 @@ export default function HistoryModal({
                         onClick={() => onCopyTicketNumber(item.ticket_number)}
                         title="Copy ticket number"
                         style={{
-                          background: "white",
+                          background: "var(--surface)",
                           border: "1px solid var(--slate-200)",
                           borderRadius: 6,
                           padding: "2px 6px",

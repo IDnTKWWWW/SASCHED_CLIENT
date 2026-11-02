@@ -7,7 +7,9 @@ export type QueueDisplayMode = "full_name" | "initials" | "ticket_only";
  */
 export type AlertThreshold = 0 | 2 | 3;
 
-export type ThemePreference = "light" | "dark";
+export type ThemePreference = "light" | "dark" | "system";
+
+export type ResolvedTheme = "light" | "dark";
 
 export type SettingsTab = "profile" | "privacy" | "notifications" | "security";
 

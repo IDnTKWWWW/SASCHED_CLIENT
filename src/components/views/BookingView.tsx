@@ -96,9 +96,9 @@ export default function BookingView({
       <div
         className="card-shadow"
         style={{
-          background: "white",
+          background: "var(--surface)",
           borderRadius: 18,
-          border: "1px solid rgba(226,232,240,0.6)",
+          border: "1px solid var(--border-soft)",
           padding: "24px",
           marginBottom: 16,
         }}
@@ -157,8 +157,8 @@ export default function BookingView({
                     ? "2px solid var(--blue-500)"
                     : "1.5px solid var(--slate-200)",
                   background: isSelected
-                    ? "linear-gradient(145deg, #eff6ff, #f8faff)"
-                    : "white",
+                    ? "var(--surface-card-selected)"
+                    : "var(--surface)",
                   textAlign: "left",
                   cursor: "pointer",
                   boxShadow: isSelected
@@ -348,9 +348,9 @@ export default function BookingView({
         <div
           className="card-shadow"
           style={{
-            background: "white",
+            background: "var(--surface)",
             borderRadius: 18,
-            border: "1px solid rgba(226,232,240,0.6)",
+            border: "1px solid var(--border-soft)",
             padding: "24px",
           }}
         >
@@ -390,7 +390,7 @@ export default function BookingView({
                 height: 34,
                 borderRadius: 9,
                 border: "1px solid var(--slate-200)",
-                background: "white",
+                background: "var(--surface)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -417,7 +417,7 @@ export default function BookingView({
                 height: 34,
                 borderRadius: 9,
                 border: "1px solid var(--slate-200)",
-                background: "white",
+                background: "var(--surface)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -567,7 +567,7 @@ export default function BookingView({
                     fontSize: 10,
                     fontWeight: 700,
                     color: "var(--blue-600)",
-                    background: "white",
+                    background: "var(--surface)",
                     border: "1px solid var(--blue-200)",
                     borderRadius: 99,
                     padding: "2px 8px",
@@ -584,9 +584,9 @@ export default function BookingView({
         <div
           className="card-shadow"
           style={{
-            background: "white",
+            background: "var(--surface)",
             borderRadius: 18,
-            border: "1px solid rgba(226,232,240,0.6)",
+            border: "1px solid var(--border-soft)",
             padding: "24px",
           }}
         >
@@ -666,7 +666,7 @@ export default function BookingView({
                     : "2px solid var(--blue-200)",
                   background: walkinDisabled
                     ? "var(--slate-50)"
-                    : "linear-gradient(135deg, #eff6ff, #dbeafe)",
+                    : "var(--surface-mode-tint)",
                   cursor: walkinDisabled ? "not-allowed" : "pointer",
                   opacity: walkinDisabled ? 0.6 : 1,
                 }}
@@ -738,7 +738,7 @@ export default function BookingView({
                           display: "inline-flex",
                           gap: 5,
                           alignItems: "center",
-                          background: "white",
+                          background: "var(--surface)",
                           border: "1px solid var(--blue-200)",
                           borderRadius: 99,
                           padding: "4px 10px",
@@ -968,7 +968,7 @@ export default function BookingView({
                                     ? "var(--blue-50)"
                                     : full
                                       ? "var(--slate-50)"
-                                      : "white",
+                                      : "var(--surface)",
                                   fontFamily: "'Outfit', sans-serif",
                                   boxShadow: isSel
                                     ? "0 0 0 3px rgba(59,130,246,0.15)"
@@ -1173,7 +1173,7 @@ export default function BookingView({
                                     ? "var(--blue-50)"
                                     : full
                                       ? "var(--slate-50)"
-                                      : "white",
+                                      : "var(--surface)",
                                   fontFamily: "'Outfit', sans-serif",
                                   boxShadow: isSel
                                     ? "0 0 0 3px rgba(59,130,246,0.15)"
@@ -1308,18 +1308,18 @@ export default function BookingView({
             <div
               style={{
                 marginTop: 14,
-                background: "#fef9c3",
-                border: "1px solid #fde68a",
+                background: "var(--notice-cutoff-bg)",
+                border: "1px solid var(--notice-cutoff-border)",
                 borderRadius: 10,
                 padding: "10px 14px",
                 fontSize: 12,
-                color: "#92400e",
+                color: "var(--notice-cutoff-title)",
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
               }}
             >
-              <WarningCircle size={13} color="#d97706" /> Please select a
+              <WarningCircle size={13} color="var(--notice-cutoff-icon)" /> Please select a
               window above first.
             </div>
           )}

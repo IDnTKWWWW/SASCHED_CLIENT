@@ -26,7 +26,8 @@ export default function SessionEndedModal({
     >
       <div
         style={{
-          background: "white",
+          background: "var(--surface)",
+          border: "1px solid var(--border-soft)",
           borderRadius: 24,
           padding: "40px 36px",
           maxWidth: 400,

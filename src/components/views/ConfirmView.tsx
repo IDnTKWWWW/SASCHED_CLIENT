@@ -88,9 +88,9 @@ export default function ConfirmView({
       <div
         className="card-shadow"
         style={{
-          background: "white",
+          background: "var(--surface)",
           borderRadius: 18,
-          border: "1px solid rgba(226,232,240,0.6)",
+          border: "1px solid var(--border-soft)",
           padding: "28px",
         }}
       >
@@ -116,7 +116,7 @@ export default function ConfirmView({
         {/* Read-only user card */}
         <div
           style={{
-            background: "linear-gradient(135deg, #f0f4ff, #e8f0fe)",
+            background: "var(--surface-tint)",
             border: "1px solid var(--blue-100)",
             borderRadius: 14,
             padding: "20px",
@@ -184,7 +184,7 @@ export default function ConfirmView({
                 display: "flex",
                 alignItems: "center",
                 gap: 5,
-                background: "white",
+                background: "var(--surface)",
                 border: "1px solid var(--blue-200)",
                 borderRadius: 99,
                 padding: "4px 10px",
@@ -207,7 +207,7 @@ export default function ConfirmView({
               <div
                 key={f.label}
                 style={{
-                  background: "white",
+                  background: "var(--surface)",
                   borderRadius: 10,
                   padding: "10px 12px",
                   border: "1px solid var(--blue-100)",
@@ -275,7 +275,7 @@ export default function ConfirmView({
                   padding: "4px 10px",
                   borderRadius: 99,
                   border: "1px solid var(--blue-200)",
-                  background: "white",
+                  background: "var(--surface)",
                   color: "var(--blue-600)",
                   fontSize: 11,
                   fontWeight: 700,
@@ -341,8 +341,8 @@ export default function ConfirmView({
                       ? "2px solid var(--blue-500)"
                       : "1.5px solid var(--slate-200)",
                     background: isSel
-                      ? "linear-gradient(145deg, #eff6ff, #f8faff)"
-                      : "white",
+                      ? "var(--surface-card-selected)"
+                      : "var(--surface)",
                     textAlign: "left",
                     cursor: "pointer",
                     boxShadow: isSel
@@ -420,7 +420,7 @@ export default function ConfirmView({
           <button
             onClick={() => setStep("booking")}
             disabled={bookingLoading}
-            style={{ flex: 1, padding: "12px", borderRadius: 11, border: "1.5px solid var(--slate-200)", background: "white", color: "var(--slate-600)", fontSize: 14, fontWeight: 600, cursor: bookingLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "'Outfit', sans-serif", opacity: bookingLoading ? 0.5 : 1 }}
+            style={{ flex: 1, padding: "12px", borderRadius: 11, border: "1.5px solid var(--slate-200)", background: "var(--surface)", color: "var(--slate-600)", fontSize: 14, fontWeight: 600, cursor: bookingLoading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, fontFamily: "'Outfit', sans-serif", opacity: bookingLoading ? 0.5 : 1 }}
           >
             <CaretLeft size={15} /> Back
           </button>
@@ -439,9 +439,9 @@ export default function ConfirmView({
         <div
           className="card-shadow"
           style={{
-            background: "white",
+            background: "var(--surface)",
             borderRadius: 18,
-            border: "1px solid rgba(226,232,240,0.6)",
+            border: "1px solid var(--border-soft)",
             padding: "22px",
           }}
         >

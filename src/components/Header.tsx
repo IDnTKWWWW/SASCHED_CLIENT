@@ -64,12 +64,12 @@ export default function Header({
   return (
     <header
       style={{
-        background: "rgba(255, 255, 255, 0.65)",
+        background: "var(--surface-glass)",
         backdropFilter: "blur(16px) saturate(180%)",
         WebkitBackdropFilter: "blur(16px) saturate(180%)",
-        borderBottom: "1px solid rgba(255, 255, 255, 0.75)",
+        borderBottom: "1px solid var(--border-header)",
         boxShadow:
-          "0 4px 24px -1px rgba(15, 23, 42, 0.05), inset 0 -1px 0 0 rgba(226, 232, 240, 0.6)",
+          "0 4px 24px -1px rgba(15, 23, 42, 0.05), inset 0 -1px 0 0 var(--border-soft)",
         position: "sticky",
         top: 0,
         zIndex: 50,
@@ -135,13 +135,13 @@ export default function Header({
                 alignItems: "center",
                 gap: 7,
                 background: showUserDropdown
-                  ? "rgba(219, 234, 254, 0.9)"
-                  : "rgba(239, 246, 255, 0.7)",
+                  ? "var(--pill-bg-active)"
+                  : "var(--pill-bg)",
                 backdropFilter: "blur(8px)",
                 WebkitBackdropFilter: "blur(8px)",
                 border: showUserDropdown
                   ? "1px solid var(--blue-400)"
-                  : "1px solid rgba(191, 219, 254, 0.8)",
+                  : "1px solid var(--pill-border)",
                 borderRadius: 99,
                 padding: "5px 12px",
                 boxShadow: showUserDropdown
@@ -178,7 +178,7 @@ export default function Header({
                     gap: 3,
                     fontSize: 10,
                     fontWeight: 700,
-                    color: "#1d4ed8",
+                    color: "var(--pill-badge-text)",
                     background: "rgba(37, 99, 235, 0.12)",
                     borderRadius: 99,
                     padding: "1px 6px",
@@ -211,10 +211,10 @@ export default function Header({
                     top: "calc(100% + 8px)",
                     right: 0,
                     width: 270,
-                    background: "rgba(255, 255, 255, 0.96)",
+                    background: "var(--surface-glass-strong)",
                     backdropFilter: "blur(16px)",
                     WebkitBackdropFilter: "blur(16px)",
-                    border: "1px solid rgba(226, 232, 240, 0.95)",
+                    border: "1px solid var(--border-glass)",
                     borderRadius: 16,
                     boxShadow:
                       "0 18px 38px -10px rgba(15, 23, 42, 0.18), 0 4px 12px rgba(15, 23, 42, 0.06)",
@@ -446,10 +446,10 @@ export default function Header({
               display: "flex",
               alignItems: "center",
               gap: 6,
-              background: "rgba(255, 255, 255, 0.65)",
+              background: "var(--surface-glass)",
               backdropFilter: "blur(8px)",
               WebkitBackdropFilter: "blur(8px)",
-              border: "1px solid rgba(226, 232, 240, 0.85)",
+              border: "1px solid var(--border-glass)",
               borderRadius: 99,
               padding: "5px 12px",
               fontSize: 12,
@@ -463,13 +463,13 @@ export default function Header({
             onMouseEnter={(e) => {
               e.currentTarget.style.borderColor = "var(--blue-300)";
               e.currentTarget.style.color = "var(--blue-600)";
-              e.currentTarget.style.background = "rgba(255, 255, 255, 0.9)";
+              e.currentTarget.style.background = "var(--surface-glass-hover)";
               e.currentTarget.style.boxShadow = "0 4px 12px rgba(37,99,235,0.08)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "rgba(226, 232, 240, 0.85)";
+              e.currentTarget.style.borderColor = "var(--border-glass)";
               e.currentTarget.style.color = "var(--slate-600)";
-              e.currentTarget.style.background = "rgba(255, 255, 255, 0.65)";
+              e.currentTarget.style.background = "var(--surface-glass)";
               e.currentTarget.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.02)";
             }}
           >
@@ -487,10 +487,10 @@ export default function Header({
               display: "flex",
               alignItems: "center",
               gap: 6,
-              background: "rgba(255, 255, 255, 0.65)",
+              background: "var(--surface-glass)",
               backdropFilter: "blur(8px)",
               WebkitBackdropFilter: "blur(8px)",
-              border: "1px solid rgba(226, 232, 240, 0.85)",
+              border: "1px solid var(--border-glass)",
               borderRadius: 99,
               padding: "5px 12px",
               fontSize: 12,
@@ -504,13 +504,13 @@ export default function Header({
             onMouseEnter={(e) => {
               e.currentTarget.style.borderColor = "var(--blue-300)";
               e.currentTarget.style.color = "var(--blue-600)";
-              e.currentTarget.style.background = "rgba(255, 255, 255, 0.9)";
+              e.currentTarget.style.background = "var(--surface-glass-hover)";
               e.currentTarget.style.boxShadow = "0 4px 12px rgba(37,99,235,0.08)";
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "rgba(226, 232, 240, 0.85)";
+              e.currentTarget.style.borderColor = "var(--border-glass)";
               e.currentTarget.style.color = "var(--slate-600)";
-              e.currentTarget.style.background = "rgba(255, 255, 255, 0.65)";
+              e.currentTarget.style.background = "var(--surface-glass)";
               e.currentTarget.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.02)";
             }}
           >
@@ -553,7 +553,7 @@ export default function Header({
                   padding: "5px 14px",
                   borderRadius: 99,
                   border: "1px solid var(--slate-200)",
-                  background: "white",
+                  background: "var(--surface)",
                   color: "var(--slate-600)",
                   fontSize: 12,
                   fontWeight: 600,
@@ -572,10 +572,10 @@ export default function Header({
                 display: "flex",
                 alignItems: "center",
                 gap: 6,
-                background: "rgba(255, 255, 255, 0.55)",
+                background: "var(--surface-glass-subtle)",
                 backdropFilter: "blur(8px)",
                 WebkitBackdropFilter: "blur(8px)",
-                border: "1px solid rgba(226, 232, 240, 0.85)",
+                border: "1px solid var(--border-glass)",
                 borderRadius: 99,
                 padding: "5px 12px",
                 fontSize: 12,

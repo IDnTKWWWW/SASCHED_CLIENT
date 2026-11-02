@@ -81,31 +81,31 @@ export const getNoticeForWindow = (
 ) => {
   if (status === "closed") {
     return {
-      bg: "linear-gradient(135deg, #fef2f2, #fee2e2)",
-      border: "#fca5a5",
-      iconColor: "#dc2626",
-      titleColor: "#991b1b",
-      textColor: "#7f1d1d",
+      bg: "var(--notice-closed-bg, linear-gradient(135deg, #fef2f2, #fee2e2))",
+      border: "var(--notice-closed-border, #fca5a5)",
+      iconColor: "var(--notice-closed-icon, #dc2626)",
+      titleColor: "var(--notice-closed-title, #991b1b)",
+      textColor: "var(--notice-closed-text, #7f1d1d)",
       title: `${windowName} is Closed`,
       text: "This window is currently closed for the day. Please check back later.",
     };
   } else if (status === "cutoff") {
     return {
-      bg: "linear-gradient(135deg, #fffbeb, #fef3c7)",
-      border: "#fde68a",
-      iconColor: "#d97706",
-      titleColor: "#92400e",
-      textColor: "#78350f",
+      bg: "var(--notice-cutoff-bg, linear-gradient(135deg, #fffbeb, #fef3c7))",
+      border: "var(--notice-cutoff-border, #fde68a)",
+      iconColor: "var(--notice-cutoff-icon, #d97706)",
+      titleColor: "var(--notice-cutoff-title, #92400e)",
+      textColor: "var(--notice-cutoff-text, #78350f)",
       title: `${windowName} Cut-off Active`,
       text: "We are nearing capacity. Only pre-booked slots are currently being accepted for this window.",
     };
   } else {
     return {
-      bg: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
-      border: "#bbf7d0",
-      iconColor: "#16a34a",
-      titleColor: "#166534",
-      textColor: "#14532d",
+      bg: "var(--notice-open-bg, linear-gradient(135deg, #f0fdf4, #dcfce7))",
+      border: "var(--notice-open-border, #bbf7d0)",
+      iconColor: "var(--notice-open-icon, #16a34a)",
+      titleColor: "var(--notice-open-title, #166534)",
+      textColor: "var(--notice-open-text, #14532d)",
       title: `${windowName} is Open`,
       text: "Standard operations are ongoing. Pre-book your slot or walk in to get a ticket.",
     };

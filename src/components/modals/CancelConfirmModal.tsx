@@ -31,7 +31,8 @@ export default function CancelConfirmModal({
     >
       <div
         style={{
-          background: "white",
+          background: "var(--surface)",
+          border: "1px solid var(--border-soft)",
           borderRadius: 22,
           padding: "36px 32px",
           maxWidth: 380,
@@ -88,7 +89,7 @@ export default function CancelConfirmModal({
               padding: "12px",
               borderRadius: 11,
               border: "1.5px solid var(--slate-200)",
-              background: "white",
+              background: "var(--surface)",
               color: "var(--slate-600)",
               fontSize: 13,
               fontWeight: 600,

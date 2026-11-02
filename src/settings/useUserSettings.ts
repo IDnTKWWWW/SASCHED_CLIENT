@@ -69,7 +69,9 @@ function mapRowToSettings(row: Record<string, any>, fallback: UserSettings): Use
 
   const themeVal = row.theme as ThemePreference;
   const validTheme: ThemePreference =
-    themeVal === "light" || themeVal === "dark" ? themeVal : fallback.theme;
+    themeVal === "light" || themeVal === "dark" || themeVal === "system"
+      ? themeVal
+      : fallback.theme;
 
   return {
     studentId: typeof row.student_id === "string" ? row.student_id : fallback.studentId,
@@ -238,23 +240,42 @@ export function useUserSettings(userId: string) {
 
         // 2. Upsert into public.user_settings
         if (userId) {
-          const { error: dbErr } = await supabase.from("user_settings").upsert(
-            {
-              user_id: userId,
-              student_id: sanitized.studentId || null,
-              program_section: sanitized.programSection || null,
-              contact_number: sanitized.contactNumber || null,
-              queue_display_mode: sanitized.queueDisplayMode,
-              alert_threshold: sanitized.alertThreshold,
-              audio_chime_enabled: sanitized.audioChimeEnabled,
-              browser_notifications: sanitized.browserNotifications,
-              email_notifications: sanitized.emailNotifications,
-              reduce_motion: sanitized.reduceMotion,
-              theme: sanitized.theme,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "user_id" }
-          );
+          const baseDbRow = {
+            user_id: userId,
+            student_id: sanitized.studentId || null,
+            program_section: sanitized.programSection || null,
+            contact_number: sanitized.contactNumber || null,
+            queue_display_mode: sanitized.queueDisplayMode,
+            alert_threshold: sanitized.alertThreshold,
+            audio_chime_enabled: sanitized.audioChimeEnabled,
+            browser_notifications: sanitized.browserNotifications,
+            email_notifications: sanitized.emailNotifications,
+            reduce_motion: sanitized.reduceMotion,
+            theme: sanitized.theme,
+            updated_at: new Date().toISOString(),
+          };
+
+          let { error: dbErr } = await supabase
+            .from("user_settings")
+            .upsert(baseDbRow, { onConflict: "user_id" });
+
+          // Graceful fallback if 'system' theme migration hasn't been executed in Supabase yet
+          if (
+            dbErr &&
+            sanitized.theme === "system" &&
+            (dbErr.code === "23514" ||
+              (dbErr.message || "").toLowerCase().includes("theme"))
+          ) {
+            const fallbackTheme =
+              typeof window !== "undefined" &&
+              window.matchMedia?.("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+            const retry = await supabase
+              .from("user_settings")
+              .upsert({ ...baseDbRow, theme: fallbackTheme }, { onConflict: "user_id" });
+            dbErr = retry.error;
+          }
 
           // If the error is NOT a missing-migration table/column error, surface it and roll back
           if (dbErr) {

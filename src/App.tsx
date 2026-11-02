@@ -8,7 +8,7 @@ import "./index.css";
 import "./styles/app.css";
 import SettingsModal from "./settings/SettingsModal";
 import { useUserSettings } from "./settings/useUserSettings";
-import type { SettingsTab } from "./settings/types";
+import type { SettingsTab, ThemePreference } from "./settings/types";
 import { formatQueueDisplayName } from "./utils/formatQueueDisplayName";
 import {
   SCHOOL_NAME,
@@ -33,6 +33,7 @@ import {
 } from "./utils/dateAndSlots";
 import { playTurnChime } from "./utils/notifications";
 import { useVantaWaves } from "./hooks/useVantaWaves";
+import { useTheme } from "./hooks/useTheme";
 import { useQueueRealtime } from "./hooks/useQueueRealtime";
 import Header from "./components/Header";
 import StepIndicator from "./components/StepIndicator";
@@ -86,14 +87,16 @@ export default function App() {
   } = useUserSettings(session?.user?.id ?? "");
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>("profile");
+  const [previewTheme, setPreviewTheme] = useState<ThemePreference | null>(null);
 
   const openSettingsAtTab = (tab: SettingsTab = "profile") => {
     setSettingsInitialTab(tab);
     setShowSettingsModal(true);
   };
 
-  // ── Vanta Background State ──────────────────────────────────────────────
-  const vantaRef = useVantaWaves(settings.reduceMotion, Boolean(session), "light");
+  // ── Theme & Vanta Background State ──────────────────────────────────────
+  const resolvedTheme = useTheme(previewTheme ?? settings.theme, Boolean(session));
+  const vantaRef = useVantaWaves(settings.reduceMotion, Boolean(session), resolvedTheme);
 
   // ── Booking State ────────────────────────────────────────────
   const [currentMonth, setCurrentMonth] = useState<number>(today.getMonth());
@@ -672,7 +675,7 @@ export default function App() {
           fontFamily: "'Outfit', 'DM Sans', sans-serif",
           minHeight: "100vh",
           position: "relative",
-          background: "linear-gradient(160deg, #f8fafc 0%, #eef5ff 50%, #e0edfc 100%)", // fallback if Vanta fails
+          background: "var(--page-bg)", // fallback if Vanta fails or Reduce Motion is enabled
         }}
       >
         {/* Vanta Waves Background — fixed so it covers whole viewport */}
@@ -829,8 +832,8 @@ export default function App() {
             padding: "18px 20px",
             fontSize: 11,
             color: "var(--slate-500)",
-            borderTop: "1px solid rgba(226, 232, 240, 0.7)",
-            background: "rgba(255, 255, 255, 0.65)",
+            borderTop: "1px solid var(--border-soft)",
+            background: "var(--surface-glass)",
             backdropFilter: "blur(16px)",
             WebkitBackdropFilter: "blur(16px)",
           }}
@@ -890,6 +893,7 @@ export default function App() {
           onTestChime={handleTestChime}
           onShowToast={showToast}
           onFullNameUpdated={(name) => setCustomFullName(name)}
+          onPreviewTheme={setPreviewTheme}
         />
 
         {/* ── TOAST NOTIFICATION ───────────────────────────────── */}

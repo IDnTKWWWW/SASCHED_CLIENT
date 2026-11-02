@@ -21,6 +21,7 @@ import {
   Sliders,
   Sun,
   Moon,
+  Desktop,
   LightningSlash,
 } from "@phosphor-icons/react";
 import { supabase } from "../supabaseClient";
@@ -29,6 +30,7 @@ import type {
   SettingsTab,
   QueueDisplayMode,
   AlertThreshold,
+  ThemePreference,
 } from "./types";
 import {
   validateUserSettings,
@@ -54,6 +56,7 @@ interface SettingsModalProps {
   onTestChime: () => void;
   onShowToast: (msg: string) => void;
   onFullNameUpdated?: (newName: string) => void;
+  onPreviewTheme?: (theme: ThemePreference | null) => void;
 }
 
 const PROGRAM_SUGGESTIONS = [
@@ -78,6 +81,7 @@ export default function SettingsModal({
   onTestChime,
   onShowToast,
   onFullNameUpdated,
+  onPreviewTheme,
 }: SettingsModalProps) {
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [draft, setDraft] = useState<UserSettings>(settings);
@@ -127,8 +131,10 @@ export default function SettingsModal({
       if (typeof window !== "undefined" && "Notification" in window) {
         setNotifPermission(Notification.permission);
       }
+    } else {
+      onPreviewTheme?.(null);
     }
-  }, [isOpen, initialTab, settings, userName]);
+  }, [isOpen, initialTab, settings, userName, onPreviewTheme]);
 
   // Escape key closes modal
   useEffect(() => {
@@ -470,7 +476,7 @@ export default function SettingsModal({
           exit={{ opacity: 0, scale: 0.95, y: 16 }}
           transition={{ type: "spring", damping: 26, stiffness: 340 }}
           style={{
-            background: "white",
+            background: "var(--surface)",
             borderRadius: 24,
             width: "100%",
             maxWidth: 780,
@@ -479,7 +485,7 @@ export default function SettingsModal({
             flexDirection: "column",
             overflow: "hidden",
             boxShadow:
-              "0 25px 70px -12px rgba(15, 23, 42, 0.32), 0 0 0 1px rgba(226, 232, 240, 0.9)",
+              "0 25px 70px -12px rgba(15, 23, 42, 0.32), 0 0 0 1px var(--border-glass)",
           }}
         >
           {/* ── MODAL HEADER ──────────────────────────────────────────── */}
@@ -490,7 +496,7 @@ export default function SettingsModal({
               display: "flex",
               alignItems: "center",
               justifyContent: "space-between",
-              background: "linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%)",
+              background: "var(--surface-modal-header)",
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -543,7 +549,7 @@ export default function SettingsModal({
                 height: 34,
                 borderRadius: 10,
                 border: "1px solid var(--slate-200)",
-                background: "white",
+                background: "var(--surface)",
                 color: "var(--slate-500)",
                 display: "flex",
                 alignItems: "center",
@@ -621,7 +627,7 @@ export default function SettingsModal({
                       border: isActive
                         ? "1px solid rgba(37, 99, 235, 0.25)"
                         : "1px solid transparent",
-                      background: isActive ? "white" : "transparent",
+                      background: isActive ? "var(--surface)" : "transparent",
                       color: isActive ? "var(--blue-700)" : "var(--slate-600)",
                       fontSize: 13,
                       fontWeight: isActive ? 700 : 500,
@@ -761,7 +767,7 @@ export default function SettingsModal({
                               border: errors.fullName
                                 ? "1.5px solid #ef4444"
                                 : "1.5px solid var(--blue-300)",
-                              background: "white",
+                              background: "var(--surface)",
                               fontSize: 13,
                               fontWeight: 600,
                               color: "var(--slate-800)",
@@ -915,6 +921,7 @@ export default function SettingsModal({
                         border: errors.studentId
                           ? "1.5px solid #ef4444"
                           : "1.5px solid var(--slate-200)",
+                        background: "var(--surface)",
                         fontSize: 13,
                         fontFamily: "'Space Mono', monospace",
                         fontWeight: 700,
@@ -966,6 +973,7 @@ export default function SettingsModal({
                         border: errors.programSection
                           ? "1.5px solid #ef4444"
                           : "1.5px solid var(--slate-200)",
+                        background: "var(--surface)",
                         fontSize: 13,
                         fontFamily: "'Outfit', sans-serif",
                         fontWeight: 600,
@@ -1052,6 +1060,7 @@ export default function SettingsModal({
                         border: errors.contactNumber
                           ? "1.5px solid #ef4444"
                           : "1.5px solid var(--slate-200)",
+                        background: "var(--surface)",
                         fontSize: 13,
                         fontFamily: "'Space Mono', monospace",
                         fontWeight: 600,
@@ -1118,7 +1127,7 @@ export default function SettingsModal({
                     </div>
                     <div
                       style={{
-                        background: "white",
+                        background: "var(--surface)",
                         borderRadius: 12,
                         padding: "11px 16px",
                         display: "flex",
@@ -1225,8 +1234,8 @@ export default function SettingsModal({
                                 ? "2px solid var(--blue-600)"
                                 : "1.5px solid var(--slate-200)",
                               background: selected
-                                ? "rgba(239, 246, 255, 0.6)"
-                                : "white",
+                                ? "var(--surface-card-selected)"
+                                : "var(--surface)",
                               cursor: "pointer",
                               textAlign: "left",
                               fontFamily: "'Outfit', sans-serif",
@@ -1241,7 +1250,7 @@ export default function SettingsModal({
                                 border: selected
                                   ? "5px solid var(--blue-600)"
                                   : "2px solid var(--slate-300)",
-                                background: "white",
+                                background: "var(--surface)",
                                 marginTop: 2,
                                 flexShrink: 0,
                               }}
@@ -1350,8 +1359,8 @@ export default function SettingsModal({
                                 ? "2px solid var(--blue-600)"
                                 : "1.5px solid var(--slate-200)",
                               background: selected
-                                ? "rgba(239, 246, 255, 0.55)"
-                                : "white",
+                                ? "var(--surface-card-selected)"
+                                : "var(--surface)",
                               cursor: "pointer",
                               textAlign: "left",
                               fontFamily: "'Outfit', sans-serif",
@@ -1420,7 +1429,7 @@ export default function SettingsModal({
                       border: "1.5px solid var(--slate-200)",
                       borderRadius: 16,
                       padding: "16px 18px",
-                      background: "white",
+                      background: "var(--surface)",
                     }}
                   >
                     <div
@@ -1536,7 +1545,7 @@ export default function SettingsModal({
                       border: "1.5px solid var(--slate-200)",
                       borderRadius: 16,
                       padding: "16px 18px",
-                      background: "white",
+                      background: "var(--surface)",
                     }}
                   >
                     <div
@@ -1676,7 +1685,7 @@ export default function SettingsModal({
                       border: "1.5px solid var(--slate-200)",
                       borderRadius: 16,
                       padding: "16px 18px",
-                      background: "white",
+                      background: "var(--surface)",
                     }}
                   >
                     <div
@@ -1809,88 +1818,115 @@ export default function SettingsModal({
                       Appearance & Motion
                     </div>
 
-                    {/* Theme Preference Selector (Light Active + Dark Coming Soon) */}
+                    {/* Theme Preference Selector (Light, Dark & System Default) */}
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "1fr 1fr",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
                         gap: 10,
                         marginBottom: 12,
                       }}
                     >
-                      <div
-                        style={{
-                          padding: "12px 14px",
-                          borderRadius: 13,
-                          border: "2px solid var(--blue-600)",
-                          background: "rgba(239, 246, 255, 0.55)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <Sun size={18} weight="fill" color="var(--blue-600)" />
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 700,
-                                color: "var(--slate-800)",
-                              }}
-                            >
-                              Light Mode
+                      {(
+                        [
+                          {
+                            id: "light" as ThemePreference,
+                            label: "Light Mode",
+                            desc: "Frost & Pastel Azure",
+                            icon: (sel: boolean) => (
+                              <Sun
+                                size={18}
+                                weight={sel ? "fill" : "bold"}
+                                color={sel ? "var(--blue-600)" : "var(--slate-500)"}
+                              />
+                            ),
+                          },
+                          {
+                            id: "dark" as ThemePreference,
+                            label: "Dark Mode",
+                            desc: "Midnight Navy Theme",
+                            icon: (sel: boolean) => (
+                              <Moon
+                                size={18}
+                                weight={sel ? "fill" : "bold"}
+                                color={sel ? "var(--blue-600)" : "var(--slate-500)"}
+                              />
+                            ),
+                          },
+                          {
+                            id: "system" as ThemePreference,
+                            label: "System",
+                            desc:
+                              typeof window !== "undefined" &&
+                              window.matchMedia?.("(prefers-color-scheme: dark)").matches
+                                ? "Auto (Currently Dark)"
+                                : "Auto (Currently Light)",
+                            icon: (sel: boolean) => (
+                              <Desktop
+                                size={18}
+                                weight={sel ? "fill" : "bold"}
+                                color={sel ? "var(--blue-600)" : "var(--slate-500)"}
+                              />
+                            ),
+                          },
+                        ] as const
+                      ).map((opt) => {
+                        const isSelected = draft.theme === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            aria-pressed={isSelected}
+                            onClick={() => {
+                              handleFieldChange("theme", opt.id);
+                              onPreviewTheme?.(opt.id);
+                            }}
+                            style={{
+                              padding: "12px 14px",
+                              borderRadius: 13,
+                              border: isSelected
+                                ? "2px solid var(--blue-600)"
+                                : "1.5px solid var(--slate-200)",
+                              background: isSelected
+                                ? "var(--surface-card-selected)"
+                                : "var(--surface)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 8,
+                              cursor: "pointer",
+                              textAlign: "left",
+                              fontFamily: "'Outfit', sans-serif",
+                              transition: "all 0.15s ease",
+                            }}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              {opt.icon(isSelected)}
+                              <div>
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    color: "var(--slate-800)",
+                                  }}
+                                >
+                                  {opt.label}
+                                </div>
+                                <div style={{ fontSize: 11, color: "var(--slate-500)" }}>
+                                  {opt.desc}
+                                </div>
+                              </div>
                             </div>
-                            <div style={{ fontSize: 11, color: "var(--slate-500)" }}>
-                              Frost & Pastel Azure
-                            </div>
-                          </div>
-                        </div>
-                        <CheckCircle size={18} weight="fill" color="var(--blue-600)" />
-                      </div>
-
-                      <div
-                        style={{
-                          padding: "12px 14px",
-                          borderRadius: 13,
-                          border: "1.5px solid var(--slate-200)",
-                          background: "var(--slate-50)",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "space-between",
-                          opacity: 0.75,
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <Moon size={18} weight="bold" color="var(--slate-500)" />
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 13,
-                                fontWeight: 700,
-                                color: "var(--slate-700)",
-                              }}
-                            >
-                              Dark Mode
-                            </div>
-                            <div style={{ fontSize: 11, color: "var(--slate-400)" }}>
-                              Midnight Navy Theme
-                            </div>
-                          </div>
-                        </div>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            fontWeight: 700,
-                            padding: "2px 8px",
-                            borderRadius: 99,
-                            background: "var(--slate-200)",
-                            color: "var(--slate-600)",
-                          }}
-                        >
-                          Coming Soon
-                        </span>
-                      </div>
+                            {isSelected && (
+                              <CheckCircle
+                                size={18}
+                                weight="fill"
+                                color="var(--blue-600)"
+                              />
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
 
                     {/* Reduce Motion Toggle */}
@@ -1899,7 +1935,7 @@ export default function SettingsModal({
                         border: "1.5px solid var(--slate-200)",
                         borderRadius: 14,
                         padding: "14px 16px",
-                        background: "white",
+                        background: "var(--surface)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "space-between",
@@ -1982,7 +2018,7 @@ export default function SettingsModal({
                       border: "1.5px solid var(--slate-200)",
                       borderRadius: 16,
                       padding: "16px 18px",
-                      background: "white",
+                      background: "var(--surface)",
                     }}
                   >
                     <div
@@ -2069,6 +2105,8 @@ export default function SettingsModal({
                             padding: "9px 34px 9px 12px",
                             borderRadius: 10,
                             border: "1.5px solid var(--slate-200)",
+                            background: "var(--surface)",
+                            color: "var(--slate-800)",
                             fontSize: 12,
                             fontFamily: "'Outfit', sans-serif",
                             outline: "none",
@@ -2104,6 +2142,8 @@ export default function SettingsModal({
                             padding: "9px 34px 9px 12px",
                             borderRadius: 10,
                             border: "1.5px solid var(--slate-200)",
+                            background: "var(--surface)",
+                            color: "var(--slate-800)",
                             fontSize: 12,
                             fontFamily: "'Outfit', sans-serif",
                             outline: "none",
@@ -2139,6 +2179,8 @@ export default function SettingsModal({
                             padding: "9px 12px",
                             borderRadius: 10,
                             border: "1.5px solid var(--slate-200)",
+                            background: "var(--surface)",
+                            color: "var(--slate-800)",
                             fontSize: 12,
                             fontFamily: "'Outfit', sans-serif",
                             outline: "none",
@@ -2156,7 +2198,7 @@ export default function SettingsModal({
                           padding: "8px 16px",
                           borderRadius: 10,
                           border: "none",
-                          background: "var(--slate-800)",
+                          background: "linear-gradient(135deg, #1e3a8a, #2563eb)",
                           color: "white",
                           fontSize: 12,
                           fontWeight: 700,
@@ -2175,7 +2217,7 @@ export default function SettingsModal({
                       border: "1.5px solid var(--slate-200)",
                       borderRadius: 16,
                       padding: "16px 18px",
-                      background: "white",
+                      background: "var(--surface)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
@@ -2276,7 +2318,7 @@ export default function SettingsModal({
                   padding: "10px 18px",
                   borderRadius: 11,
                   border: "1.5px solid var(--slate-200)",
-                  background: "white",
+                  background: "var(--surface)",
                   color: "var(--slate-600)",
                   fontSize: 13,
                   fontWeight: 600,
